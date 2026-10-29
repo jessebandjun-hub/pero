@@ -16,8 +16,8 @@ and tool list updates. This note records L0 evidence against `master`
 [phodal/pero#16](https://github.com/phodal/pero/pull/16):
 `TestMCPToolListChangedUpdatesRegisteredTools`. The test mounts an in-memory
 server and requires add, remove, and description replacement to refresh the
-agent-visible tool generation. That contract is on the open pull request.
-Merging it leaves this ROADMAP checkbox open.
+agent-visible tool generation. That contract was merged in #16, and it
+leaves this ROADMAP checkbox open.
 
 ## Streamable HTTP on master
 
@@ -42,4 +42,4 @@ in-memory transport.
 - A stdio fixture that discovers and calls a tool.
 - Resource list refresh after a change (`notifications/resources/list_changed`).
   Resource read and list helpers exist. No list-changed refresh contract is
-  on `master` or in #16.
+  on `master`, including the contract merged in #16.
