@@ -6,6 +6,7 @@ import { net } from 'electron';
 
 // These are transport values, generated from the same contract as the Rust Host.
 import type { AppAccess, AppRecord } from '../../../protocol/generated/host';
+import { acceptedAppsAction, appName, reorderNames } from './apps-command.ts';
 
 type Event = { version: number; kind: string; request_id: string | null; text: string; data?: unknown };
 type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
@@ -41,7 +42,7 @@ export class DesktopApps {
     this.pending.clear();
   }
 
-  private request<T>(action: string, fields: Record<string, string> = {}): Promise<T> {
+  private request<T>(action: string, fields: Record<string, unknown> = {}): Promise<T> {
     const id = `apps-${randomUUID()}`;
     return new Promise((resolveRequest, reject) => {
       const timer = setTimeout(() => {
@@ -56,10 +57,10 @@ export class DesktopApps {
 
   async command(value: unknown): Promise<void> {
     try {
-      const command = value as { action?: string; name?: string; panel?: string };
+      const command = value as { action?: string; name?: string; panel?: string; names?: unknown };
       const action = command?.action?.replace(/^apps_/, '');
-      if (!['list', 'install', 'enable', 'disable', 'uninstall', 'open'].includes(action || '')) throw new Error('Unsupported App action');
-      if (command.name !== undefined && (command.name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(command.name))) throw new Error('Invalid App name');
+      if (!acceptedAppsAction(action)) throw new Error('Unsupported App action');
+      if (command.name !== undefined && !appName(command.name)) throw new Error('Invalid App name');
       if (action === 'open') {
         if (!command.name) throw new Error('Choose an App first');
         const catalog = await this.request<AppRecord[]>('list');
@@ -72,11 +73,13 @@ export class DesktopApps {
         } });
         return;
       }
-      let fields: Record<string, string> = {};
+      let fields: Record<string, unknown> = {};
       if (action === 'install') {
         const path = await this.choose();
         if (!path) return;
         fields = { path };
+      } else if (action === 'reorder') {
+        fields = { names: reorderNames(command.names) };
       } else if (action !== 'list') {
         if (!command.name) throw new Error('Choose an App first');
         fields = { name: command.name };
