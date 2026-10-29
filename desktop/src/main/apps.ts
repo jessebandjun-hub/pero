@@ -55,9 +55,10 @@ export class DesktopApps {
   }
 
   async command(value: unknown): Promise<void> {
+    let action = '';
     try {
       const command = value as { action?: string; name?: string; panel?: string };
-      const action = command?.action?.replace(/^apps_/, '');
+      action = command?.action?.replace(/^apps_/, '') || '';
       if (!['list', 'install', 'enable', 'disable', 'uninstall', 'open'].includes(action || '')) throw new Error('Unsupported App action');
       if (command.name !== undefined && (command.name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(command.name))) throw new Error('Invalid App name');
       if (action === 'open') {
@@ -81,9 +82,19 @@ export class DesktopApps {
         if (!command.name) throw new Error('Choose an App first');
         fields = { name: command.name };
       }
-      const catalog = await this.request<AppRecord[]>(action!, fields);
+      const catalog = await this.request<AppRecord[]>(action, fields);
       this.send({ version: 1, kind: 'apps_catalog', request_id: null, text: '', data: catalog });
     } catch (error) {
+      // A failed uninstall may already have stopped the backend or dropped a
+      // vanished package. Republish the catalog the Host still tracks, then the error.
+      if (action === 'uninstall') {
+        try {
+          const catalog = await this.request<AppRecord[]>('list');
+          this.send({ version: 1, kind: 'apps_catalog', request_id: null, text: '', data: catalog });
+        } catch {
+          // The uninstall error is the one the workbench shows.
+        }
+      }
       this.send({ version: 1, kind: 'apps_error', request_id: null, text: (error as Error).message });
     }
   }

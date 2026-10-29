@@ -98,7 +98,7 @@ impl Apps {
                 }
                 Request::Uninstall { method, id, name } => {
                     let _ = (method, id);
-                    serde_json::to_value(store.uninstall(&name)?)
+                    serde_json::to_value(store.uninstall(&name).map_err(|error| error.to_string())?)
                 }
                 Request::Resolve { method, id, name } => {
                     let _ = (method, id);

@@ -226,6 +226,7 @@ mod surface {
                 .when(!cfg!(target_family = "wasm"), |el| el.child(div().mb(px(12.)).text_color(p.color("text-muted"))
                     .child(self.t("apps.native_unavailable"))))
                 .when_some(self.apps.error.as_ref(), |el, error| el.child(div().mb(px(12.)).p(px(10.))
+                    .whitespace_normal()
                     .bg(p.color("error-bg")).text_color(p.color("error")).child(error.clone())))
                 .when(busy, |el| el.child(div().py(px(12.)).text_color(p.color("text-muted")).child(self.t("apps.loading"))))
                 .when(cfg!(target_family = "wasm") && !busy && self.apps.catalog.is_empty(), |el| el.child(div().py(px(32.)).flex().flex_col().gap(px(8.))

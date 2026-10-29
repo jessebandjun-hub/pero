@@ -100,6 +100,10 @@ fn installation_and_retained_data_lifecycle() {
     store.uninstall(&name).unwrap();
     assert!(store.list().is_empty());
     assert_eq!(
+        store.uninstall(&name).unwrap_err().to_string(),
+        "App is not installed"
+    );
+    assert_eq!(
         fs::read_to_string(data.join("draft.json")).unwrap(),
         "user draft"
     );
@@ -187,4 +191,142 @@ fn backend_lifecycle() {
         );
         drop(store);
     }
+}
+
+#[test]
+fn uninstall_failure_drops_a_missing_package_from_the_catalog() {
+    let workspace = Workspace::new();
+    let source = workspace.package(None);
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    store.install(&source).unwrap();
+    fs::remove_dir_all(root.join(name.as_str())).unwrap();
+    let UninstallError::RemovalFailed(failure) = store.uninstall(&name).unwrap_err() else {
+        panic!("a missing package should be reported");
+    };
+    assert!(!failure.package_present);
+    assert!(!failure.package_intact);
+    assert!(!failure.backend_running);
+    assert!(failure.retained.is_empty());
+    assert!(store.list().is_empty());
+    assert!(
+        failure
+            .to_string()
+            .contains("The package is no longer on disk.")
+    );
+    assert!(failure.to_string().contains("Nothing is still listed."));
+    assert!(failure.to_string().contains("The backend is not running."));
+}
+
+#[test]
+fn uninstall_stops_backend_and_removes_the_app() {
+    let workspace = Workspace::new();
+    let source = workspace.package(Some("python"));
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    store.install(&source).unwrap();
+    store.set_enabled(&name, true).unwrap();
+    let access = store.resolve(&name).unwrap().backend.unwrap();
+    let address = access.url.strip_prefix("http://").unwrap().to_string();
+    let mut stream = TcpStream::connect(&address).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .unwrap();
+    write!(
+        stream,
+        "GET / HTTP/1.0\r\nX-Pero-App-Token: {}\r\n\r\n",
+        access.token
+    )
+    .unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).unwrap();
+    assert!(reply.contains("cell-result"));
+    let observed = workspace.0.join("managed/app-data/virtual-cell/observed");
+    assert!(observed.is_file());
+    assert!(store.uninstall(&name).unwrap().is_empty());
+    assert!(TcpStream::connect(&address).is_err());
+    assert!(!root.join(name.as_str()).exists());
+    assert!(observed.is_file());
+    drop(store);
+    assert!(AppStore::open(root).unwrap().list().is_empty());
+}
+
+#[cfg(unix)]
+struct RestoreMode(PathBuf);
+
+#[cfg(unix)]
+impl Drop for RestoreMode {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&self.0) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o755);
+            let _ = fs::set_permissions(&self.0, permissions);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_uninstall_reports_the_installation_that_remains() {
+    use std::os::unix::fs::PermissionsExt;
+    let workspace = Workspace::new();
+    let source = workspace.package(Some("python"));
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    store.install(&source).unwrap();
+    store.set_enabled(&name, true).unwrap();
+    let access = store.resolve(&name).unwrap().backend.unwrap();
+    let address = access.url.strip_prefix("http://").unwrap().to_string();
+    assert!(TcpStream::connect(&address).is_ok());
+    // The directory itself is not writable, so removal fails before any entry
+    // is deleted and the installed package stays intact.
+    let directory = root.join(name.as_str());
+    let mut permissions = fs::metadata(&directory).unwrap().permissions();
+    permissions.set_mode(0o555);
+    fs::set_permissions(&directory, permissions).unwrap();
+    let _restore = RestoreMode(directory.clone());
+    let UninstallError::RemovalFailed(failure) = store.uninstall(&name).unwrap_err() else {
+        panic!("uninstall should report the installation that remains");
+    };
+    assert!(
+        failure.cause.contains("Permission denied"),
+        "{}",
+        failure.cause
+    );
+    assert!(failure.package_present);
+    assert!(failure.package_intact);
+    assert!(!failure.backend_running);
+    assert!(
+        failure
+            .retained
+            .iter()
+            .any(|app| app.name == name && app.enabled)
+    );
+    let listed: Vec<_> = store
+        .list()
+        .iter()
+        .map(|app| app.name.as_str().to_string())
+        .collect();
+    let reported: Vec<_> = failure
+        .retained
+        .iter()
+        .map(|app| app.name.as_str().to_string())
+        .collect();
+    assert_eq!(listed, reported);
+    assert_eq!(
+        failure.to_string(),
+        format!(
+            "Could not remove the App package: {}. The package is still installed. The backend is not running. Still listed: virtual-cell.",
+            failure.cause
+        )
+    );
+    assert!(directory.join("app.json").is_file());
+    assert!(TcpStream::connect(&address).is_err());
+    let restarted = store.resolve(&name).unwrap().backend.unwrap();
+    assert_ne!(restarted.token, access.token);
+    assert!(TcpStream::connect(restarted.url.strip_prefix("http://").unwrap()).is_ok());
 }

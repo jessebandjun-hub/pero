@@ -30,6 +30,69 @@ pub struct AppAccess {
     pub backend: Option<BackendAccess>,
 }
 
+/// What an uninstall left behind when the package directory could not be removed.
+#[derive(Debug)]
+pub struct UninstallFailure {
+    pub(crate) cause: String,
+    pub(crate) retained: Vec<AppSummary>,
+    /// The installation directory is still present.
+    pub(crate) package_present: bool,
+    /// `app.json` and the installation record are still files in that directory.
+    pub(crate) package_intact: bool,
+    /// The Host is still tracking a backend child for this App.
+    pub(crate) backend_running: bool,
+}
+
+/// Uninstall either removes the package or reports the installation that remains.
+#[derive(Debug)]
+pub enum UninstallError {
+    NotInstalled,
+    RemovalFailed(UninstallFailure),
+}
+
+impl std::fmt::Display for UninstallFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let package = if !self.package_present {
+            "The package is no longer on disk."
+        } else if self.package_intact {
+            "The package is still installed."
+        } else {
+            "The package is still on disk but incomplete."
+        };
+        let backend = if self.backend_running {
+            "The backend is still running."
+        } else {
+            "The backend is not running."
+        };
+        let listed = if self.retained.is_empty() {
+            "Nothing is still listed.".to_string()
+        } else {
+            format!(
+                "Still listed: {}.",
+                self.retained
+                    .iter()
+                    .map(|app| app.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        write!(
+            formatter,
+            "Could not remove the App package: {}. {package} {backend} {listed}",
+            self.cause
+        )
+    }
+}
+
+impl std::fmt::Display for UninstallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotInstalled => formatter.write_str("App is not installed"),
+            Self::RemovalFailed(failure) => write!(formatter, "{failure}"),
+        }
+    }
+}
+
 /// Imperative shell: owns disk state and backend children. Domain declarations
 /// are parsed once, at install or startup, before entering this store.
 pub struct AppStore {
@@ -212,14 +275,34 @@ impl AppStore {
         Ok(self.list())
     }
 
-    pub fn uninstall(&mut self, name: &AppName) -> Result<Vec<AppSummary>, String> {
+    /// Stops the backend, then removes the package. Domain data under `app-data`
+    /// stays. When removal fails, the catalog is the apps still tracked and the
+    /// error states what remains on disk and whether a backend is still tracked.
+    pub fn uninstall(&mut self, name: &AppName) -> Result<Vec<AppSummary>, UninstallError> {
         if !self.installed.contains_key(name) {
-            return Err("App is not installed".into());
+            return Err(UninstallError::NotInstalled);
         }
         self.processes.remove(name);
-        fs::remove_dir_all(self.root.join(name.as_str())).map_err(|error| error.to_string())?;
+        let directory = self.root.join(name.as_str());
+        if let Err(error) = fs::remove_dir_all(&directory) {
+            let package_present = directory.is_dir();
+            // A directory that is already gone is not an installed App. A
+            // directory that remains stays listed, even if files inside it were lost.
+            if !package_present {
+                self.installed.remove(name);
+            }
+            let package_intact = package_present
+                && directory.join("app.json").is_file()
+                && directory.join(".installation.json").is_file();
+            return Err(UninstallError::RemovalFailed(UninstallFailure {
+                cause: error.to_string(),
+                retained: self.list(),
+                package_present,
+                package_intact,
+                backend_running: self.processes.contains_key(name),
+            }));
+        }
         self.installed.remove(name);
-        // Domain data is deliberately retained outside the installed package.
         Ok(self.list())
     }
 
