@@ -146,6 +146,12 @@ func (s *mcpConnectionSupervisor) connect(ctx context.Context) (retrySafe bool, 
 			default:
 			}
 		},
+		// A non-nil handler is what subscribes this session to
+		// notifications/resources/list_changed. The SDK drops its resources/list
+		// and resources/templates/list caches before calling it, so the next
+		// list_mcp_resources call reads the server's current page. Resources
+		// are not a tool generation and are not cached again here.
+		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) {},
 	})
 	session, err := client.Connect(ctx, trackedTransport, nil)
 	if err != nil {
