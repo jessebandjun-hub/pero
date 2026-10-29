@@ -292,8 +292,17 @@ impl Render for Workbench {
             self.input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
             });
+            let placeholder = self.t("settings.automations_name");
+            self.automation_name.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
+            let placeholder = self.t("settings.automations_instruction");
+            self.automation_instruction.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
         }
         self.apply_local_execution(window, cx);
+        self.apply_automation_inputs(window, cx);
         let width: f32 = window.viewport_size().width.into();
         let height: f32 = window.viewport_size().height.into();
         let compact = width < 1150.;
