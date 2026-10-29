@@ -66,6 +66,38 @@ fn main() -> io::Result<()> {
             emit(event)?;
             continue;
         }
+        if value
+            .get("method")
+            .and_then(|v| v.as_str())
+            .is_some_and(|method| method.starts_with("settings.model"))
+        {
+            use pero_contracts::model_settings::ModelSettingsRequest;
+            let event = match serde_json::from_value::<ModelSettingsRequest>(value)
+                .ok()
+                .zip(settings_path.as_deref())
+            {
+                Some((ModelSettingsRequest::Get, path)) => {
+                    let mut event = HostEvent::new("model_settings", None, String::new());
+                    if let Some(settings) = pero_runtime::settings::load_model_settings(path) {
+                        event.data = serde_json::to_value(settings)?;
+                    }
+                    event
+                }
+                Some((ModelSettingsRequest::Set { settings }, path)) => {
+                    match pero_runtime::settings::save_model_settings(path, &settings) {
+                        Ok(()) => {
+                            let mut event = HostEvent::new("model_settings", None, String::new());
+                            event.data = serde_json::to_value(settings)?;
+                            event
+                        }
+                        Err(_) => HostEvent::message("error", None, "error.preferences"),
+                    }
+                }
+                None => HostEvent::message("error", None, "error.preferences"),
+            };
+            emit(event)?;
+            continue;
+        }
         if value.get("method").and_then(|v| v.as_str()) == Some("contribution") {
             contributions::dispatch(value);
             continue;

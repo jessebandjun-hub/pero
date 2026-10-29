@@ -78,6 +78,28 @@ pub fn save_workbench(path: &Path, preferences: &pero_contracts::workbench::Work
     update(path, |value| value["workbench"] = preferences)
 }
 
+pub fn load_model_settings(path: &Path) -> Option<pero_contracts::model_settings::ModelSettings> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| serde_json::from_value(value["model_settings"].clone()).ok())
+        .filter(pero_contracts::model_settings::ModelSettings::valid)
+}
+
+pub fn save_model_settings(
+    path: &Path,
+    settings: &pero_contracts::model_settings::ModelSettings,
+) -> io::Result<()> {
+    if !settings.valid() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid model settings",
+        ));
+    }
+    let settings = serde_json::to_value(settings)?;
+    update(path, |value| value["model_settings"] = settings)
+}
+
 pub fn save_remote_connection(
     path: &Path,
     connection: Option<&RemoteConnectionSettings>,
@@ -146,6 +168,39 @@ mod tests {
         std::fs::write(&path, "invalid").unwrap();
         assert!(save_locale(&path, "en").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn model_settings_survive_reload_and_invalid_values_do_not_change_the_file() {
+        let path =
+            std::env::temp_dir().join(format!("pero-model-settings-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"locale":"zh-CN","other":{"enabled":true}}"#).unwrap();
+        let settings = pero_contracts::model_settings::ModelSettings {
+            provider: "xai".into(),
+            model: "grok-code-fast-1".into(),
+            default_preset: "coding".into(),
+        };
+        save_model_settings(&path, &settings).unwrap();
+        assert_eq!(load_model_settings(&path), Some(settings.clone()));
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(value["locale"], "zh-CN");
+        assert_eq!(value["other"]["enabled"], true);
+        for (provider, model, preset) in [
+            (" xai", "grok-code-fast-1", "coding"),
+            ("xai", "", "coding"),
+            ("xai", "grok-code-fast-1", "coding\n"),
+        ] {
+            let rejected = pero_contracts::model_settings::ModelSettings {
+                provider: provider.into(),
+                model: model.into(),
+                default_preset: preset.into(),
+            };
+            assert!(save_model_settings(&path, &rejected).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+            assert_eq!(load_model_settings(&path), Some(settings.clone()));
+        }
         std::fs::remove_file(path).unwrap();
     }
 }

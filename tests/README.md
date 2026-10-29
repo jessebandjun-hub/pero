@@ -76,7 +76,7 @@ URL 恢复、390px 深色与无 JavaScript 回退。设置 `PERO_TEST_DATABASE_U
 
 ## 契约脚本的覆盖规则
 
-`contracts/host.mjs` 走完 echo、locale、加密连接偏好写入/拒绝/断开、workspace、附件、会话、权限、模型、排队、取消、认证失败、关闭和重启回放。Host 发出 schema 里没有的 `kind` 会失败。schema 里有、这次没走到的 `kind` 只打印，目前不失败。
+`contracts/host.mjs` 走完 echo、locale、加密连接偏好写入/拒绝/断开、模型设置的读取/保存/拒绝/重启、workspace、附件、会话、权限、模型、排队、取消、认证失败、关闭和重启回放。Host 发出 schema 里没有的 `kind` 会失败。schema 里有、这次没走到的 `kind` 只打印，目前不失败。
 
 ## 先不动的部分
 

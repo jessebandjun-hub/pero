@@ -1690,6 +1690,20 @@
       ],
       "additionalProperties": false
     },
+    "GetModelSettingsRequest": {
+      "title": "GetModelSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.model.get"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
     "GetWorkbenchSettingsRequest": {
       "title": "GetWorkbenchSettingsRequest",
       "type": "object",
@@ -1777,6 +1791,9 @@
         },
         {
           "$ref": "#/$defs/WorkbenchSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/ModelSettingsEvent"
         },
         {
           "$ref": "#/$defs/RemoteSettingsSavedEvent"
@@ -1893,6 +1910,12 @@
         },
         {
           "$ref": "#/$defs/SetWorkbenchSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/GetModelSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/SetModelSettingsRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"
@@ -2465,6 +2488,72 @@
         "model_id"
       ],
       "additionalProperties": false
+    },
+    "ModelSettings": {
+      "title": "ModelSettings",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "default_preset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "default_preset"
+      ],
+      "additionalProperties": false,
+      "description": "Provider, model, and default preset stored in the runtime settings file."
+    },
+    "ModelSettingsEvent": {
+      "title": "ModelSettingsEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "model_settings"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ModelSettings"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "`data` is the effective Provider, model, and default preset. It is absent when none is saved."
     },
     "NewSessionCommand": {
       "title": "NewSessionCommand",
@@ -3705,6 +3794,24 @@
       "required": [
         "method",
         "locale"
+      ],
+      "additionalProperties": false
+    },
+    "SetModelSettingsRequest": {
+      "title": "SetModelSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.model"
+        },
+        "settings": {
+          "$ref": "#/$defs/ModelSettings"
+        }
+      },
+      "required": [
+        "method",
+        "settings"
       ],
       "additionalProperties": false
     },

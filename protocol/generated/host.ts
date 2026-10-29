@@ -11,6 +11,8 @@ export type HostInput =
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
+  | GetModelSettingsRequest
+  | SetModelSettingsRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
@@ -47,6 +49,7 @@ export type HostEvent =
   | ContributionErrorEvent
   | SettingsEvent
   | WorkbenchSettingsEvent
+  | ModelSettingsEvent
   | RemoteSettingsSavedEvent
   | RemoteSettingsErrorEvent
   | ReadyEvent
@@ -165,6 +168,21 @@ export interface WorkbenchPreferences {
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+export interface GetModelSettingsRequest {
+  method: "settings.model.get";
+}
+export interface SetModelSettingsRequest {
+  method: "settings.model";
+  settings: ModelSettings;
+}
+/**
+ * Provider, model, and default preset stored in the runtime settings file.
+ */
+export interface ModelSettings {
+  provider: string;
+  model: string;
+  default_preset: string;
 }
 export interface ListAgentsCommand {
   action: "list_agents";
@@ -419,6 +437,16 @@ export interface WorkbenchSettingsEvent {
   request_id: string | null;
   text: string;
   data: WorkbenchPreferences;
+}
+/**
+ * `data` is the effective Provider, model, and default preset. It is absent when none is saved.
+ */
+export interface ModelSettingsEvent {
+  kind: "model_settings";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  data?: ModelSettings;
 }
 /**
  * Main-process acknowledgements contain no persisted connection payload.
