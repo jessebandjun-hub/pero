@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "architecture_test",
+    srcs = [
+        "imports_test.go",
+        "lines_test.go",
+        "locate_test.go",
+    ],
+    data = [
+        "//:go.mod",  # keep
+        "//llm:production_go_sources",  # keep
+        "//session:production_go_sources",  # keep
+    ],
+)

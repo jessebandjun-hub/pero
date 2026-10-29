@@ -17,6 +17,11 @@ See [ADR 0004](../adr/0004-incremental-bazel-build.md) for the scope. The explic
 Bazel PostgreSQL suite is manual and uncached, and fails when its database is
 not configured. Setup and invocation instructions live in [Bazel quality gates](bazel.md).
 
+Harness import boundaries and the 1000-line source ceiling are
+[architecture constraints](architecture-constraints.md). `model` and `runtime`
+already reject non-standard-library imports. Protocol sample drift remains the
+contract diff checks in `//:checks`.
+
 1. `npm run build`: native Host, GPUI WASM, web assets, and the Electron shell.
 2. `npm run check`: TypeScript, generated DESIGN.md theme, locale catalogs, and generated contracts.
 3. `npm test`: Rust tests for `pero-contracts`, `pero-runtime`, `pero-host`, `pero-ui`, and `pero-worker`, including the ACP lifecycle cases in `tests/runtime/`.
