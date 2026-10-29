@@ -292,6 +292,10 @@ impl Render for Workbench {
             self.input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
             });
+            let placeholder = self.t("apps.version_placeholder");
+            self.app_update_version.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
         }
         self.apply_local_execution(window, cx);
         let width: f32 = window.viewport_size().width.into();

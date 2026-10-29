@@ -1,5 +1,6 @@
 import { translate, normalizeLocale } from '../../locales';
 import type { HostEvent } from './bootstrap';
+import { framesToDrop, reopenUpdatedApp, type CatalogApp } from './app-frames';
 import themes from './theme.generated.json';
 
 export type AppSurface = { visible: boolean; name?: string; panel?: string; left?: number; top?: number; width?: number; height?: number; dark: boolean; locale: string };
@@ -19,6 +20,7 @@ export function mountAppSurfaces(command: (value: object) => Promise<void>) {
   document.body.append(region);
   let surface: AppSurface = { visible: false, dark: false, locale: 'en' };
   let error = '';
+  let versions = new Map<string, string>();
   const key = (name?: string, panel?: string) => `${name}:${panel}`;
   const active = () => frames.get(key(surface.name, surface.panel));
   const context = (frame: Frame) => frame.element.contentWindow?.postMessage({ type: 'pero:app:context', context: {
@@ -88,13 +90,18 @@ export function mountAppSurfaces(command: (value: object) => Promise<void>) {
       } else if (event.kind === 'apps_error' && surface.visible) {
         error = event.text; renderStatus();
       } else if (event.kind === 'apps_catalog') {
-        const catalog = event.data as { name: string; enabled: boolean }[];
+        const catalog = event.data as CatalogApp[];
+        const plan = framesToDrop([...frames.values()], versions, catalog);
+        versions = plan.versions;
         for (const [identity, frame] of frames) {
-          if (!catalog.some(app => app.name === frame.name && app.enabled)) {
+          if (plan.drop.includes(frame.name)) {
             clearTimeout(frame.timer); frame.element.remove(); frames.delete(identity);
           }
         }
+        const reopen = reopenUpdatedApp(surface.visible, surface, catalog, plan.replaced);
+        if (reopen) error = '';
         update();
+        if (reopen) void command({ action: 'apps_open', name: reopen.name, panel: reopen.panel });
       } else if (event.kind === 'disconnected') {
         for (const frame of frames.values()) { clearTimeout(frame.timer); frame.element.remove(); }
         frames.clear();

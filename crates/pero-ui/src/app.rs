@@ -52,6 +52,7 @@ pub(crate) struct Workbench {
     pub local_execution: crate::local_execution::LocalExecution,
     pub contribution: crate::contributions::ContributionState,
     pub apps: crate::apps::AppWorkspace,
+    pub app_update_version: Entity<InputState>,
     pub app_surface: String,
     pub tab: usize,
     pub connected: bool,
@@ -137,12 +138,20 @@ impl Workbench {
             .push(cx.observe(&composer, |this, _, cx| this.update_composer_completion(cx)));
         subscriptions.push(cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()));
         let project_binding = cx.new(|cx| InputState::new(window, cx));
+        let app_update_version = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(pero_contracts::i18n::text(
+                &locale,
+                "apps.version_placeholder",
+            ))
+        });
         subscriptions.push(cx.subscribe(&project_binding, |this, _, event, cx| {
             if matches!(event, InputEvent::Change) {
                 this.preferences_status = crate::settings_menu::PreferenceSaveState::Idle;
             }
             cx.notify();
         }));
+        subscriptions
+            .push(cx.subscribe(&app_update_version, |_, _, _: &InputEvent, cx| cx.notify()));
         let remote = crate::remote::RemoteState::new(window, cx);
         let local_execution = crate::local_execution::LocalExecution::new(&locale, window, cx);
         Self {
@@ -150,6 +159,7 @@ impl Workbench {
             local_execution,
             contribution: Default::default(),
             apps: crate::apps::AppWorkspace::default(),
+            app_update_version,
             app_surface: String::new(),
             input,
             input_locale: String::new(),
@@ -438,6 +448,7 @@ pub fn snapshot() -> String {
             "preferences":ui.preferences,"selectedProject":ui.selected_project,"projectTab":ui.project_tab,"taskStatus":ui.task_status,
             "projects":ui.project_catalog(),"workspaceRepositories":ui.workspace_repositories,
             "apps": ui.apps.catalog, "activeApp": ui.apps.active, "appError": ui.apps.error, "appsLoading": ui.apps.loading,
+            "appUpdating": ui.apps.updating, "appUpdateVersion": ui.app_update_version.read(cx).value().as_ref(),
             "locale": ui.locale, "labels": { "tasks": ui.t("nav.tasks"), "send": ui.t("probe.send") },
             "tab": ui.tab, "events": ui.events,
             "chats": ui.chats, "activeChat": ui.active_chat, "agents": ui.agents,

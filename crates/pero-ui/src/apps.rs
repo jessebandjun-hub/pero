@@ -33,6 +33,8 @@ pub(crate) struct AppWorkspace {
     pub loading: bool,
     pub error: Option<String>,
     pub removing: Option<String>,
+    /// App whose target version is being chosen. A failure leaves this set.
+    pub updating: Option<String>,
 }
 
 impl AppWorkspace {
@@ -51,6 +53,19 @@ impl AppWorkspace {
         self.loading = false;
         self.error = None;
         self.removing = None;
+        self.updating = None;
+    }
+
+    pub fn begin_update(&mut self, name: &str) {
+        self.removing = None;
+        self.error = None;
+        self.updating = Some(name.to_string());
+    }
+
+    /// The Host refused the update. The catalog version and selection stay.
+    pub fn note_failure(&mut self, message: String) {
+        self.loading = false;
+        self.error = Some(message);
     }
 
     pub fn select(&mut self, name: &str, panel: &str) -> bool {
@@ -74,7 +89,7 @@ mod surface {
     use super::*;
     use crate::app::Workbench;
     use gpui_kit::{
-        component::{button::*, *},
+        component::{button::*, input::Input, *},
         prelude::*,
         *,
     };
@@ -108,10 +123,7 @@ mod surface {
                         self.apps.error = Some(self.t("apps.invalid_catalog").into());
                     }
                 },
-                "apps_error" => {
-                    self.apps.loading = false;
-                    self.apps.error = Some(event.text.clone());
-                }
+                "apps_error" => self.apps.note_failure(event.text.clone()),
                 "apps_opened" => {
                     if let Ok(selection) =
                         serde_json::from_value::<AppSelection>(event.data.clone())
@@ -211,6 +223,13 @@ mod surface {
                     )
                     .into_any_element();
             }
+            let version_ready = !self
+                .app_update_version
+                .read(cx)
+                .value()
+                .to_string()
+                .trim()
+                .is_empty();
             div().id("apps-library").flex_1().min_w_0().h_full().overflow_y_scroll().p(px(20.))
                 .child(div().flex().items_center().gap(px(10.)).mb(px(16.))
                     .child(div().text_size(px(22.)).font_weight(FontWeight::SEMIBOLD).child(self.t("nav.apps")))
@@ -226,6 +245,7 @@ mod surface {
                 .when(!cfg!(target_family = "wasm"), |el| el.child(div().mb(px(12.)).text_color(p.color("text-muted"))
                     .child(self.t("apps.native_unavailable"))))
                 .when_some(self.apps.error.as_ref(), |el, error| el.child(div().mb(px(12.)).p(px(10.))
+                    .whitespace_normal()
                     .bg(p.color("error-bg")).text_color(p.color("error")).child(error.clone())))
                 .when(busy, |el| el.child(div().py(px(12.)).text_color(p.color("text-muted")).child(self.t("apps.loading"))))
                 .when(cfg!(target_family = "wasm") && !busy && self.apps.catalog.is_empty(), |el| el.child(div().py(px(32.)).flex().flex_col().gap(px(8.))
@@ -235,7 +255,9 @@ mod surface {
                     let name = app.name.clone();
                     let toggle_name = name.clone();
                     let remove_name = name.clone();
+                    let update_name = name.clone();
                     let confirming = self.apps.removing.as_deref() == Some(name.as_str());
+                    let updating = self.apps.updating.as_deref() == Some(name.as_str());
                     let enabled = app.enabled;
                     div().py(px(14.)).border_b_1().border_color(p.color("border"))
                         .child(div().flex().items_center().gap(px(10.))
@@ -265,10 +287,39 @@ mod surface {
                                     this.apps.loading = true;
                                     this.command(json!({"action":if enabled {"apps_disable"} else {"apps_enable"},"name":toggle_name}), cx);
                                 })))
+                            .child(Button::new(("app-update", index)).outline().small().label(self.t("apps.update")).disabled(busy || !cfg!(target_family = "wasm"))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.apps.begin_update(&update_name);
+                                    cx.notify();
+                                })))
                             .child(Button::new(("app-remove", index)).ghost().small().label(self.t("apps.remove")).disabled(busy || !cfg!(target_family = "wasm"))
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.apps.removing = Some(remove_name.clone()); cx.notify();
+                                    this.apps.updating = None;
+                                    this.apps.removing = Some(remove_name.clone());
+                                    cx.notify();
                                 }))))
+                        .when(updating, |el| {
+                            let name = name.clone();
+                            el.child(div().mt(px(10.)).flex().items_center().gap(px(10.))
+                                .child(div().flex_1().min_w_0().flex().flex_col().gap(px(6.))
+                                    .child(div().whitespace_normal().text_color(p.color("text-muted")).child(self.t("apps.update_hint")))
+                                    .child(div().flex().items_center().gap(px(8.))
+                                        .child(div().child(self.t("apps.update_version")))
+                                        .child(Input::new(&self.app_update_version)
+                                            .id("app-update-version")
+                                            .accessibility_id("app-update-version")
+                                            .aria_label(self.t("apps.update_version"))
+                                            .w(px(160.))
+                                            .disabled(busy || !cfg!(target_family = "wasm")))))
+                                .child(Button::new(("app-update-cancel", index)).outline().small().label(self.t("apps.cancel"))
+                                    .on_click(cx.listener(|this, _, _, cx| { this.apps.updating = None; cx.notify(); })))
+                                .child(Button::new(("app-update-confirm", index)).outline().small().label(self.t("apps.confirm_update"))
+                                    .disabled(busy || !version_ready || !cfg!(target_family = "wasm"))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let version = this.app_update_version.read(cx).value().to_string();
+                                        this.command(json!({"action":"apps_update","name":name,"version":version.trim()}), cx);
+                                    }))))
+                        })
                         .when(confirming, |el| {
                             let name = name.clone();
                             el.child(div().mt(px(10.)).flex().items_center().gap(px(10.))
@@ -322,5 +373,47 @@ mod tests {
             workspace.replace_catalog(vec![]);
             assert!(workspace.active.is_none());
         }
+    }
+
+    #[test]
+    fn failed_update_keeps_the_installed_version_visible() {
+        let app = |version: &str| InstalledApp {
+            name: "cell".into(),
+            version: version.into(),
+            display_name: "Cell".into(),
+            description: String::new(),
+            enabled: true,
+            panels: vec![AppPanel {
+                id: "main".into(),
+                title: "Cell".into(),
+                entry: "dist/index.html".into(),
+            }],
+        };
+        let mut workspace = AppWorkspace::default();
+        workspace.replace_catalog(vec![app("0.1.0")]);
+        assert!(workspace.select("cell", "main"));
+        workspace.removing = Some("cell".into());
+        workspace.error = Some("earlier".into());
+        workspace.begin_update("cell");
+        assert!(workspace.removing.is_none());
+        assert!(workspace.error.is_none());
+        let pointer = "Update of cell to 0.2.0 failed: two records share kept.json. Kept installed version 0.1.0 and domain data at /apps/app-data/cell. Error record: /apps/app-data/cell/.pero-migration-error.json.";
+        workspace.note_failure(pointer.into());
+        assert_eq!(workspace.catalog[0].version, "0.1.0");
+        assert!(workspace.active.is_some());
+        assert_eq!(workspace.updating.as_deref(), Some("cell"));
+        assert!(!workspace.loading);
+        assert!(
+            workspace
+                .error
+                .as_deref()
+                .unwrap()
+                .contains(".pero-migration-error.json")
+        );
+        workspace.replace_catalog(vec![app("0.2.0")]);
+        assert_eq!(workspace.catalog[0].version, "0.2.0");
+        assert!(workspace.updating.is_none());
+        assert!(workspace.error.is_none());
+        assert!(workspace.active.is_some());
     }
 }
