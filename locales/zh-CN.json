@@ -423,6 +423,7 @@
   "settings.appearance": "外观",
   "settings.all": "全部设置…",
   "error.preferences": "无法保存偏好，请检查本机运行时后重试。",
+  "error.credentials": "无法保存凭据，请检查内容后重试。",
   "project.sources": "资料与来源",
   "project.execution": "执行环境",
   "project.expand": "展开",

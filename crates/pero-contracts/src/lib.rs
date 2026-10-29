@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 pub mod composer_capabilities;
 pub mod context;
+pub mod credentials;
 pub mod i18n;
 pub mod local_worker;
 pub mod roadmap;

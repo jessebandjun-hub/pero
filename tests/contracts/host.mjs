@@ -10,6 +10,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import schema from '../../protocol/generated/host.schema.json' with { type: 'json' };
 
 const root = resolve(import.meta.dirname, '../..');
+const SECRET = 'c2VjcmV0LW1hcmtlci1kb25vdC1lY2hv';
+const SECRET_TEXT = 'secret-marker-donot-echo';
+const redact = (value) => String(value).split(SECRET).join('[redacted]').split(SECRET_TEXT).join('[redacted]');
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictTypes: false });
 ajv.addSchema(schema);
 const validator = (name) => ajv.getSchema(`${schema.$id}#/$defs/${name}`);
@@ -43,14 +46,19 @@ const failures = [];
 const seen = new Set();
 
 function startHost() {
-  const child = spawn(resolve(root, 'target/debug/pero-host'), ['--stdio'], { cwd: temp, env, stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = spawn(resolve(root, 'target/debug/pero-host'), ['--stdio'], { cwd: temp, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
   const events = [];
   let waiters = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
+    const safe = redact(line);
+    if (safe !== line) failures.push('Host event echoed a credential secret');
     let event;
-    try { event = JSON.parse(line); } catch { failures.push(`non-JSON event: ${line}`); return; }
+    try { event = JSON.parse(line); } catch { failures.push(`non-JSON event: ${safe}`); return; }
     seen.add(event.kind);
-    if (eventVariants.has(event.kind) && !validEvent(event)) failures.push(`event ${explain(eventVariants.get(event.kind), event)}\n    ${line.slice(0, 240)}`);
+    if (eventVariants.has(event.kind) && !validEvent(event)) failures.push(`event ${explain(eventVariants.get(event.kind), event)}\n    ${safe.slice(0, 240)}`);
     // Replayed journal entries are validated by ReplayData; count their kinds too.
     for (const replayed of event.kind === 'replay' ? event.data?.events ?? [] : []) seen.add(`replay:${replayed.kind}`);
     events.push(event);
@@ -58,8 +66,8 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
-      const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
+      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method === 'settings.credentials' ? (input.operation === 'remove' ? 'RemoveCredentialRequest' : 'ReplaceCredentialRequest') : input.method === 'settings.credentials.get' ? 'GetCredentialSettingsRequest' : input.method === 'settings.workbench' ? 'SetWorkbenchSettingsRequest' : input.method === 'settings.workbench.get' ? 'GetWorkbenchSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
+      const preview = input.method === 'settings.remote' || input.method === 'settings.credentials' ? '[credential settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
     child.stdin.write((typeof input === 'string' ? input : JSON.stringify(input)) + '\n');
@@ -73,7 +81,13 @@ function startHost() {
       event.taken = true; clearTimeout(timer); resolveEvent(event); return true;
     });
   });
-  const stop = () => new Promise((done) => { child.once('exit', done); child.stdin.end(); });
+  const stop = () => new Promise((done) => {
+    child.once('exit', () => {
+      if (stderr.includes(SECRET) || stderr.includes(SECRET_TEXT)) failures.push('Host stderr echoed a credential secret');
+      done();
+    });
+    child.stdin.end();
+  });
   return { send, next, stop };
 }
 
@@ -115,6 +129,38 @@ try {
     await host.next('remote_settings_error', e => e.request_id === 'remote-invalid');
   }
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Invalid remote preference changed existing settings');
+
+  const credentialView = {credentials:[{id:'github',label:'GitHub',configured:true,status:'configured'}]};
+  host.send({method:'settings.credentials.get'});
+  if (!isDeepStrictEqual((await host.next('credential_settings')).data, {credentials:[]})) failures.push('Credential settings were not empty');
+  host.send({method:'settings.credentials',operation:'replace',id:'github',label:'GitHub',secret:SECRET});
+  const appliedCredentials = await host.next('credential_settings');
+  if (!isDeepStrictEqual(appliedCredentials.data, credentialView)) failures.push('Credential settings view mismatch');
+  if (redact(JSON.stringify(appliedCredentials)) !== JSON.stringify(appliedCredentials)) failures.push('Credential settings view echoed the secret');
+  const storedCredentials = preferences();
+  if (storedCredentials.credentials?.[0]?.secret !== SECRET) failures.push('Host did not persist the credential envelope');
+  if (storedCredentials.credentials[0].label !== 'GitHub' || storedCredentials.locale !== 'zh-CN' || !isDeepStrictEqual(storedCredentials.remote_connection, storedConnection) || !isDeepStrictEqual(storedCredentials.workbench, workbench)) failures.push('Saving credentials replaced other settings');
+  if (JSON.stringify(storedCredentials).includes(SECRET_TEXT)) failures.push('Credential envelope was stored in plaintext');
+  if (process.platform !== 'win32' && (statSync(env.PERO_SETTINGS_PATH).mode & 0o777) !== 0o600) failures.push('Credential settings must be private to the user');
+  const savedCredentialBytes = readFileSync(env.PERO_SETTINGS_PATH);
+  host.send({method:'settings.credentials.get'});
+  if (!isDeepStrictEqual((await host.next('credential_settings')).data, credentialView)) failures.push('Reading credentials changed the saved view');
+  if (!savedCredentialBytes.equals(readFileSync(env.PERO_SETTINGS_PATH))) failures.push('Reading credentials rewrote the settings file');
+  for (const [command, invalid] of [
+    [{method:'settings.credentials',operation:'replace',id:'github',label:' ',secret:SECRET}, false],
+    [{method:'settings.credentials',operation:'replace',id:'github',label:'GitHub',secret:'===='}, true],
+    [{method:'settings.credentials',operation:'replace',id:'../github',label:'GitHub',secret:SECRET}, true],
+    [{method:'settings.credentials',operation:'remove',id:'missing'}, false],
+    [{method:'settings.credentials',operation:'remove',id:'github',secret:SECRET}, true],
+  ]) {
+    host.send(command, {invalid});
+    const error = await host.next('error', (event) => event.message_key === 'error.credentials');
+    const rendered = JSON.stringify(error);
+    if (error.text || error.data != null || rendered.includes(SECRET) || rendered.includes(SECRET_TEXT) || rendered.includes('====')) failures.push('Rejected credential save showed success or echoed secret material');
+  }
+  if (!savedCredentialBytes.equals(readFileSync(env.PERO_SETTINGS_PATH))) failures.push('Rejected credential save changed the settings file');
+  host.send({method:'settings.credentials.get'});
+  if (!isDeepStrictEqual((await host.next('credential_settings')).data, credentialView)) failures.push('Rejected credential save changed the stored credential');
 
   host.send({ action: 'list_agents' });
   await host.next('agents');
@@ -191,6 +237,9 @@ try {
   await host.next('ready');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Workbench preferences were lost after Host restart');
+  host.send({method:'settings.credentials.get'});
+  if (!isDeepStrictEqual((await host.next('credential_settings')).data, credentialView)) failures.push('Credential settings were lost after Host restart');
+  if (!readFileSync(env.PERO_SETTINGS_PATH, 'utf8').includes(SECRET) || readFileSync(env.PERO_SETTINGS_PATH, 'utf8').includes(SECRET_TEXT)) failures.push('Credential envelope was lost or revealed after Host restart');
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Remote preference was lost after Host restart');
   host.send({ method: 'settings.remote', id: 'remote-disconnect', connection: null });
   await host.next('remote_settings_saved', e => e.request_id === 'remote-disconnect');
@@ -200,9 +249,21 @@ try {
   if (!replay.data.events.length) failures.push('replay after restart contained no events');
   if (replay.data.events.some(event => event.thread_id === thread || event.thread_id === 'delete-live')) failures.push('deleted thread was replayed');
   if (!replay.data.events.some(event => event.thread_id === 'settings-contract')) failures.push('deleting a thread removed unrelated history');
+  host.send({method:'settings.credentials',operation:'remove',id:'github'});
+  const removed = await host.next('credential_settings');
+  if (removed.data.credentials.length || redact(JSON.stringify(removed)) !== JSON.stringify(removed)) failures.push('Removing a credential echoed it or left it visible');
+  const removedFile = readFileSync(env.PERO_SETTINGS_PATH, 'utf8');
+  if (removedFile.includes(SECRET) || removedFile.includes(SECRET_TEXT) || preferences().locale !== 'zh-CN') failures.push('Removed credential changed other settings or left the envelope behind');
+  await host.stop();
+
+  host = startHost();
+  await host.next('ready');
+  host.send({method:'settings.credentials.get'});
+  const afterRemove = await host.next('credential_settings');
+  if (afterRemove.data.credentials.length || redact(JSON.stringify(afterRemove)) !== JSON.stringify(afterRemove)) failures.push('Removed credential returned after Host restart');
   await host.stop();
 } catch (error) {
-  failures.push(String(error));
+  failures.push(redact(error));
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
@@ -214,7 +275,7 @@ if (undeclared.length) failures.push(`Host emitted kinds missing from host.tsp: 
 console.log(`Observed ${[...seen].filter((k) => !k.startsWith('replay:')).length}/${declared.length} declared event kinds.`);
 if (unexercised.length) console.log(`Not exercised here: ${unexercised.join(', ')}`);
 if (failures.length) {
-  console.error(`\n${failures.length} contract failure(s):\n- ${failures.join('\n- ')}`);
+  console.error(redact(`\n${failures.length} contract failure(s):\n- ${failures.join('\n- ')}`));
   process.exit(1);
 }
 console.log('Host protocol conformance passed.');
