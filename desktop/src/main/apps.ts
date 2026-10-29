@@ -6,6 +6,7 @@ import { net } from 'electron';
 
 // These are transport values, generated from the same contract as the Rust Host.
 import type { AppAccess, AppRecord } from '../../../protocol/generated/host';
+import { prepareAppCommand } from './app-command';
 
 type Event = { version: number; kind: string; request_id: string | null; text: string; data?: unknown };
 type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
@@ -56,15 +57,11 @@ export class DesktopApps {
 
   async command(value: unknown): Promise<void> {
     try {
-      const command = value as { action?: string; name?: string; panel?: string };
-      const action = command?.action?.replace(/^apps_/, '');
-      if (!['list', 'install', 'enable', 'disable', 'uninstall', 'open'].includes(action || '')) throw new Error('Unsupported App action');
-      if (command.name !== undefined && (command.name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(command.name))) throw new Error('Invalid App name');
-      if (action === 'open') {
-        if (!command.name) throw new Error('Choose an App first');
+      const prepared = prepareAppCommand(value);
+      if (prepared.type === 'open') {
         const catalog = await this.request<AppRecord[]>('list');
-        const record = catalog.find(app => app.name === command.name);
-        const panel = record?.panels.find(panel => panel.id === (command.panel || record.panels[0]?.id));
+        const record = catalog.find(app => app.name === prepared.name);
+        const panel = record?.panels.find(panel => panel.id === (prepared.panel || record.panels[0]?.id));
         if (!record?.enabled || !panel) throw new Error('Enable the App before opening it');
         const access = await this.request<AppAccess>('resolve', { name: record.name });
         this.send({ version: 1, kind: 'apps_opened', request_id: null, text: '', data: {
@@ -72,16 +69,18 @@ export class DesktopApps {
         } });
         return;
       }
+      let action: string;
       let fields: Record<string, string> = {};
-      if (action === 'install') {
+      if (prepared.type === 'install' || prepared.type === 'update') {
         const path = await this.choose();
         if (!path) return;
-        fields = { path };
-      } else if (action !== 'list') {
-        if (!command.name) throw new Error('Choose an App first');
-        fields = { name: command.name };
+        action = prepared.type;
+        fields = prepared.type === 'install' ? { path } : { name: prepared.name, version: prepared.version, path };
+      } else {
+        action = prepared.action;
+        fields = prepared.fields;
       }
-      const catalog = await this.request<AppRecord[]>(action!, fields);
+      const catalog = await this.request<AppRecord[]>(action, fields);
       this.send({ version: 1, kind: 'apps_catalog', request_id: null, text: '', data: catalog });
     } catch (error) {
       this.send({ version: 1, kind: 'apps_error', request_id: null, text: (error as Error).message });
