@@ -1,7 +1,7 @@
 // One real stdio wiring check for App install, startup recovery and private resolution.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -68,6 +68,30 @@ try {
   const access = await host.request('resolve', { name: 'sample' });
   assert.equal(access.value.entry, 'dist/index.html');
   assert.equal(access.value.root, await realpath(resolve(temp, 'installed/sample')));
+  const next = resolve(temp, 'sample-2');
+  await mkdir(resolve(next, 'dist'), { recursive: true });
+  await writeFile(resolve(next, 'dist/index.html'), '<h1>Sample 0.2.0</h1>');
+  await writeFile(resolve(next, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'sample', version: '0.2.0', displayName: 'Sample App',
+    contributes: { panels: [{ id: 'main', title: 'Sample', entry: 'dist/index.html' }] },
+  }));
+  const updated = await host.request('update', { name: 'sample', version: '0.2.0', path: next });
+  assert.equal(updated.value[0].version, '0.2.0');
+  assert.equal(updated.value[0].enabled, true);
+  const updatedRoot = await realpath(resolve(temp, 'installed/sample'));
+  assert.match(await readFile(resolve(updatedRoot, 'dist/index.html'), 'utf8'), /0\.2\.0/);
+  const broken = resolve(temp, 'sample-broken');
+  await mkdir(resolve(broken, 'dist'), { recursive: true });
+  await writeFile(resolve(broken, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'sample', version: '0.3.0', displayName: 'Sample App',
+    contributes: { panels: [{ id: 'main', title: 'Sample', entry: 'dist/index.html' }] },
+  }));
+  const failed = await host.request('update', { name: 'sample', version: '0.3.0', path: broken });
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /sample/);
+  assert.match(failed.error, /Kept installed version 0\.2\.0/);
+  assert.equal((await host.request('list')).value[0].version, '0.2.0');
+  assert.match(await readFile(resolve(updatedRoot, 'dist/index.html'), 'utf8'), /0\.2\.0/);
   assert.equal((await host.request('uninstall', { name: 'sample' })).value.length, 0);
   assert.deepEqual(failures, []);
   console.log('App stdio wiring and generated contract passed.');

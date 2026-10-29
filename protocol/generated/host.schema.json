@@ -280,6 +280,9 @@
           "$ref": "#/$defs/InstallApp"
         },
         {
+          "$ref": "#/$defs/UpdateApp"
+        },
+        {
           "$ref": "#/$defs/EnableApp"
         },
         {
@@ -483,6 +486,12 @@
         "value"
       ],
       "additionalProperties": false
+    },
+    "AppVersion": {
+      "title": "AppVersion",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
     },
     "AttachFilesCommand": {
       "title": "AttachFilesCommand",
@@ -4045,6 +4054,42 @@
         "id"
       ],
       "additionalProperties": false
+    },
+    "UpdateApp": {
+      "title": "UpdateApp",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "update"
+        },
+        "name": {
+          "$ref": "#/$defs/AppName"
+        },
+        "version": {
+          "$ref": "#/$defs/AppVersion"
+        },
+        "path": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string",
+          "const": "apps"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "action",
+        "name",
+        "version",
+        "path",
+        "method",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "Replace one installed package. `version` must equal that package's manifest."
     },
     "UserMessageContext": {
       "title": "UserMessageContext",

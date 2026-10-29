@@ -100,6 +100,14 @@ pub struct AppSummary {
     pub panels: Vec<AppPanel>,
 }
 
+pub(super) fn require_version(version: &str) -> Result<(), String> {
+    if version.is_empty() || version.len() > 64 {
+        Err("Invalid App version".into())
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) fn relative_entry(value: &str) -> bool {
     !value.is_empty()
         && !value.contains(['\\', ':', '\0'])
@@ -117,8 +125,7 @@ impl AppDefinition {
         if value.schema_version != 1 {
             return Err("Unsupported App schemaVersion; expected 1".into());
         }
-        if value.version.is_empty()
-            || value.version.len() > 64
+        if require_version(&value.version).is_err()
             || value.display_name.trim().is_empty()
             || value.display_name.len() > 200
             || value.description.len() > 4096

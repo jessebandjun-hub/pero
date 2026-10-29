@@ -43,6 +43,7 @@ impl AppStore {
     pub fn open(root: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&root).map_err(|error| error.to_string())?;
         let root = dunce::canonicalize(root).map_err(|error| error.to_string())?;
+        recover_interrupted_updates(&root)?;
         let data = root
             .parent()
             .ok_or("App root needs a parent directory")?
@@ -139,6 +140,109 @@ impl AppStore {
     }
 
     fn install_package(&mut self, source: &Path) -> Result<AppName, String> {
+        let (source, definition) = self.open_source(source)?;
+        let target = self.root.join(definition.name.as_str());
+        if target.exists() {
+            return Err(
+                "App is already installed; uninstall it before installing another version".into(),
+            );
+        }
+        let staging = stage_package(&self.root, &source, &definition, false)?;
+        if let Err(error) = fs::rename(&staging, &target) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error.to_string());
+        }
+        let name = definition.name.clone();
+        self.installed.insert(
+            name.clone(),
+            AppInstallation {
+                definition,
+                enabled: false,
+            },
+        );
+        Ok(name)
+    }
+
+    /// Replace the installed package with a local package of the named version.
+    /// Preparation failures leave the running package in place. The previous
+    /// directory is restored when publishing the staged package fails.
+    pub fn update(
+        &mut self,
+        name: &AppName,
+        version: &str,
+        source: &Path,
+    ) -> Result<Vec<AppSummary>, String> {
+        recover_interrupted_updates(&self.root)?;
+        let (kept, enabled) = {
+            let current = self
+                .installed
+                .get(name)
+                .ok_or_else(|| format!("App {} is not installed", name.as_str()))?;
+            (current.definition.version.clone(), current.enabled)
+        };
+        if definition::require_version(version).is_err() {
+            return Err(format!(
+                "Update of {} failed: invalid version. Kept installed version {kept}.",
+                name.as_str()
+            ));
+        }
+        let fail = |reason: String| -> Result<Vec<AppSummary>, String> {
+            Err(format!(
+                "Update of {} to {version} failed: {reason}. Kept installed version {kept}.",
+                name.as_str()
+            ))
+        };
+        let (source, definition) = match self.open_source(source) {
+            Ok(prepared) => prepared,
+            Err(error) => return fail(error),
+        };
+        if &definition.name != name {
+            return fail(format!("package identity is {}", definition.name.as_str()));
+        }
+        if definition.version != version {
+            return fail(format!("package version is {}", definition.version));
+        }
+        let target = self.root.join(name.as_str());
+        let staging = match stage_package(&self.root, &source, &definition, enabled) {
+            Ok(staging) => staging,
+            Err(error) => return fail(error),
+        };
+        let rollback = self.root.join(format!(".rollback-{}", name.as_str()));
+        if rollback.exists() {
+            let _ = fs::remove_dir_all(&staging);
+            return fail(format!("backup {} is already present", rollback.display()));
+        }
+        if let Err(error) = fs::rename(&target, &rollback) {
+            let _ = fs::remove_dir_all(&staging);
+            return fail(error.to_string());
+        }
+        if let Err(error) = fs::rename(&staging, &target) {
+            let restored = fs::rename(&rollback, &target);
+            let _ = fs::remove_dir_all(&staging);
+            if let Err(restore_error) = restored {
+                return Err(format!(
+                    "Update of {} to {version} failed: {error}. Restoring installed version {kept} failed: {restore_error}. Backup remains at {}.",
+                    name.as_str(),
+                    rollback.display()
+                ));
+            }
+            return fail(error.to_string());
+        }
+        // The published directory is the new package. Stop the previous backend
+        // so the next resolve runs this version, then drop the backup.
+        self.processes.remove(name);
+        let _ = fs::remove_dir_all(&rollback);
+        self.installed.insert(
+            name.clone(),
+            AppInstallation {
+                definition,
+                enabled,
+            },
+        );
+        Ok(self.list())
+    }
+
+    fn open_source(&self, source: &Path) -> Result<(PathBuf, AppDefinition), String> {
         if fs::symlink_metadata(source)
             .map_err(|error| error.to_string())?
             .file_type()
@@ -153,49 +257,7 @@ impl AppStore {
         let definition = AppDefinition::parse(
             &fs::read(source.join("app.json")).map_err(|error| error.to_string())?,
         )?;
-        let target = self.root.join(definition.name.as_str());
-        if target.exists() {
-            return Err(
-                "App is already installed; uninstall it before installing another version".into(),
-            );
-        }
-        let staging = self.root.join(format!(".install-{}", uuid::Uuid::new_v4()));
-        fs::create_dir(&staging).map_err(|error| error.to_string())?;
-        let copied = (|| {
-            let mut total = (0usize, 0u64);
-            copy_package(&source, &staging, &mut total)?;
-            for entry in definition
-                .contributes
-                .panels
-                .iter()
-                .map(|panel| panel.entry.as_str())
-                .chain(
-                    definition
-                        .backend
-                        .iter()
-                        .map(|backend| backend.entry.as_str()),
-                )
-            {
-                if !staging.join(entry).is_file() {
-                    return Err(format!("App entry is missing: {entry}"));
-                }
-            }
-            write_record(&staging, false)?;
-            fs::rename(&staging, &target).map_err(|error| error.to_string())
-        })();
-        if let Err(error) = copied {
-            let _ = fs::remove_dir_all(staging);
-            return Err(error);
-        }
-        let name = definition.name.clone();
-        self.installed.insert(
-            name.clone(),
-            AppInstallation {
-                definition,
-                enabled: false,
-            },
-        );
-        Ok(name)
+        Ok((source, definition))
     }
 
     pub fn set_enabled(
@@ -254,6 +316,80 @@ impl AppStore {
             backend,
         })
     }
+}
+
+fn stage_package(
+    root: &Path,
+    source: &Path,
+    definition: &AppDefinition,
+    enabled: bool,
+) -> Result<PathBuf, String> {
+    let staging = root.join(format!(".install-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&staging).map_err(|error| error.to_string())?;
+    let copied = (|| {
+        let mut total = (0usize, 0u64);
+        copy_package(source, &staging, &mut total)?;
+        for entry in definition
+            .contributes
+            .panels
+            .iter()
+            .map(|panel| panel.entry.as_str())
+            .chain(
+                definition
+                    .backend
+                    .iter()
+                    .map(|backend| backend.entry.as_str()),
+            )
+        {
+            if !staging.join(entry).is_file() {
+                return Err(format!("App entry is missing: {entry}"));
+            }
+        }
+        write_record(&staging, enabled)?;
+        Ok(())
+    })();
+    if let Err(error) = copied {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    Ok(staging)
+}
+
+/// A swap parks the previous package at `.rollback-<name>` until the new
+/// directory is published. Opening restores that package when the published
+/// directory has no installation record, and drops the backup once the
+/// published install is intact.
+fn recover_interrupted_updates(root: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(name) = file_name.strip_prefix(".rollback-") else {
+            continue;
+        };
+        if AppName::try_from(name.to_owned()).is_err() {
+            continue;
+        }
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            continue;
+        }
+        let rollback = entry.path();
+        let live = root.join(name);
+        if live.join(".installation.json").is_file() {
+            fs::remove_dir_all(&rollback).map_err(|error| error.to_string())?;
+        } else {
+            if live.exists() {
+                fs::remove_dir_all(&live).map_err(|error| error.to_string())?;
+            }
+            fs::rename(&rollback, &live).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 fn write_record(root: &Path, enabled: bool) -> Result<(), String> {

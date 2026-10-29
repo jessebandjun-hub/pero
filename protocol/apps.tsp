@@ -5,6 +5,7 @@ namespace Pero.Apps;
 
 model AppClosed { ...Record<never>; }
 @minLength(1) @maxLength(64) @pattern("^[a-z0-9]+(?:-[a-z0-9]+)*$") scalar AppName extends string;
+@minLength(1) @maxLength(64) scalar AppVersion extends string;
 @minLength(1) @maxLength(128) scalar RequestId extends string;
 
 model AppPanel { id: AppName; title: string; entry: string; ...AppClosed; }
@@ -24,11 +25,13 @@ model AppAccess { root: string; entry: string; backend?: BackendAccess; ...AppCl
 model RequestBase { method: "apps"; id: RequestId; ...AppClosed; }
 model ListApps { action: "list"; ...RequestBase; }
 model InstallApp { action: "install"; path: string; ...RequestBase; }
+/** Replace one installed package. `version` must equal that package's manifest. */
+model UpdateApp { action: "update"; name: AppName; version: AppVersion; path: string; ...RequestBase; }
 model EnableApp { action: "enable"; name: AppName; ...RequestBase; }
 model DisableApp { action: "disable"; name: AppName; ...RequestBase; }
 model UninstallApp { action: "uninstall"; name: AppName; ...RequestBase; }
 model ResolveApp { action: "resolve"; name: AppName; ...RequestBase; }
-@oneOf union AppRequest { ListApps, InstallApp, EnableApp, DisableApp, UninstallApp, ResolveApp }
+@oneOf union AppRequest { ListApps, InstallApp, UpdateApp, EnableApp, DisableApp, UninstallApp, ResolveApp }
 model AppSuccess { ok: true; value: AppRecord[] | AppAccess; ...AppClosed; }
 model AppFailure { ok: false; error: string; ...AppClosed; }
 @oneOf union AppResult { AppSuccess, AppFailure }
