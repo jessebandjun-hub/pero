@@ -7,8 +7,8 @@ date: 2026-10-29
 
 ROADMAP item 「App 更新」 stays unchecked. Acceptance is a displayed version that
 matches the version actually running, and a usable version after an update
-fails. This note records the Host slice on top of `604cca1`. It does not mark
-the item complete.
+fails. This note records the Host slice on top of `604cca1` and the
+Desktop request that follows it. It does not mark the item complete.
 
 ## Landed
 
@@ -53,12 +53,54 @@ serves are `0.2.0`, that the previous backend has stopped, and that the domain
 file is unchanged. The contract test drives the same success and missing-entry
 failure through `pero-host --stdio` and the generated `AppRequest` schema.
 
+## Desktop
+
+The workbench catalog already showed `version`. It now also sends an update.
+The renderer asks for `apps_update` with the installed name and a target
+version of 1–64 characters. `DesktopApps` allows that action, asks for a
+package folder through the same directory dialog as install, and writes
+`apps` `update` with `name`, `version`, and `path`. The path is not taken
+from the renderer.
+
+App commands use `pero:apps`. The Electron session IPC allowlist in
+`desktop/src/main/index.ts` does not include `update`: a session command
+with that action is still rejected, so it cannot skip the folder dialog or
+the App request shape.
+
+A successful update replaces the catalog. The row shows the version Host
+returned, and the update form closes. A retained panel for that App is
+dropped. If that panel is visible, Desktop opens it again so the next
+`resolve` runs the published package. A failure does not replace the
+catalog. The installed version, the selected panel, and the update form
+stay, and the banner shows the Host error. Cancelling the folder dialog
+leaves that banner in place.
+
+## Desktop evidence
+
+Desktop, L0, on 2026-10-29. No Electron process was launched.
+
+- `node --test desktop/src/main/app-command.test.ts web/src/app-frames.test.ts`
+  — the update action requires a target version; an unknown action is
+  refused; a changed catalog version drops the retained panel and reopens
+  it only while that panel is visible and the App stays enabled.
+- `node scripts/check/locales.mjs` — 528 bilingual messages, including the
+  new App update strings. `apps` is now part of the UI key check.
+- `./node_modules/.bin/tsc --noEmit` — Desktop and web sources typechecked.
+- `cargo +stable test -p pero-ui --lib apps` — 2 passed, including
+  `failed_update_keeps_the_installed_version_visible`. Rust 1.99.1. This
+  test does not link gpui-kit.
+- `cargo +stable check -p pero-ui --features native` — the workbench
+  compiled against crates.io gpui-kit 0.8.1. It then stopped on missing
+  `web/public/fonts` binaries in `native.rs`. Those files are unrelated to
+  this slice, and this run did not use the path-patched kit.
+
 ## Still open
 
-Desktop `DesktopApps` still accepts only list, install, enable, disable,
-uninstall, and open. The workbench catalog already renders `version`, and no
-Desktop session was run for a successful update or a failed update that keeps
-the previous package openable. There is no marketplace or automatic update
-service. A declared direct data migration is recorded in
-[apps-data-migration.md](apps-data-migration.md). Without that declaration,
-an update leaves the previous data files in place.
+No Desktop session was run, and no packaged Electron build was tested. A
+displayed version was not compared with a package actually resolved after
+an update, and a failed update was not opened again in the running app.
+ROADMAP 「App 更新」 stays unchecked.
+
+There is no marketplace or automatic update service. A declared direct data
+migration is recorded in [apps-data-migration.md](apps-data-migration.md).
+Without that declaration, an update leaves the previous data files in place.

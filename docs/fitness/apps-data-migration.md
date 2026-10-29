@@ -8,7 +8,8 @@ date: 2026-10-29
 ROADMAP item 「App 数据迁移」 stays unchecked. Acceptance is that records can be
 checked before and after an App version upgrade, and that a failed migration
 does not overwrite recoverable old data. This note records the Host slice on
-top of the specified-version update branch. It does not mark the item complete.
+top of the specified-version update branch, and the Desktop update that
+surfaces that result. It does not mark the item complete.
 
 ## Landed
 
@@ -58,10 +59,24 @@ and `pero-host` do not link gpui-kit, so this run used Cargo directly:
 used: this Cargo also wants to record registry sources for the GPUI packages
 that the committed lock leaves unresolved until the path patch is applied.
 
+## Desktop
+
+Desktop sends the same `apps` `update` as the Host slice. It does not add a
+migration API. The catalog version updates when Host accepts the package.
+When Host rejects the migration, the previous catalog version and selection
+stay on screen, and the banner shows the Host error. That error names the
+App, the version kept, the domain directory, and
+`app-data/<name>/.pero-migration-error.json` when Host could write the
+pointer. Desktop does not read or render that file.
+
+The command checks and the catalog-version behavior are the same run
+recorded in [apps-update.md](apps-update.md). No Electron process was
+launched.
+
 ## Still open
 
-Desktop `DesktopApps` still has no update action, and no Desktop session was
-run for a migrated App or a failed migration. The ROADMAP checkbox stays open.
+No Desktop session checked records before and after an upgrade, and no
+packaged Electron build was tested. The ROADMAP checkbox stays open.
 
 Only one direct `from`/`to` step is applied. A jump across intermediate
 declarations keeps the previous files instead of chaining those steps. The
@@ -70,4 +85,5 @@ contents. A transforming publish rebuilds the domain directory from non-dot
 files and the receipt, so dotfiles in that directory are not carried into the
 new tree. An update does not stop a running backend until the package and the
 data publish both succeed, so a backend can still write during the snapshot.
-There is no marketplace or automatic update service.
+There is no marketplace or automatic update service. Desktop does not browse
+domain files.
