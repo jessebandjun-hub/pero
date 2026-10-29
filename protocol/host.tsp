@@ -45,6 +45,11 @@ model SetLocaleRequest {
   ...Closed;
 }
 
+model GetLocaleRequest {
+  method: "settings.locale.get";
+  ...Closed;
+}
+
 model ProjectBinding { @minLength(1) @maxLength(4096) workspace: string; @maxLength(128) project_id: string; ...Closed }
 model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; ...Closed }
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
@@ -116,6 +121,7 @@ union HostInput {
   LocalWorkerRequest,
   EchoRequest,
   SetLocaleRequest,
+  GetLocaleRequest,
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,

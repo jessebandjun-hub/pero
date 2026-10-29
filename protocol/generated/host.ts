@@ -8,6 +8,7 @@ export type HostInput =
   | LocalWorkerRequest
   | EchoRequest
   | SetLocaleRequest
+  | GetLocaleRequest
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
@@ -134,6 +135,9 @@ export interface EchoRequest {
 export interface SetLocaleRequest {
   method: "settings.locale";
   locale: "en" | "zh-CN";
+}
+export interface GetLocaleRequest {
+  method: "settings.locale.get";
 }
 export interface SetRemoteSettingsRequest {
   method: "settings.remote";

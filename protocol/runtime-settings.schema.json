@@ -13,6 +13,14 @@
     },
     {
       "type": "object",
+      "required": ["method"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "const": "settings.locale.get" }
+      }
+    },
+    {
+      "type": "object",
       "required": ["method", "id", "connection"],
       "additionalProperties": false,
       "properties": {
