@@ -423,6 +423,7 @@
   "settings.appearance": "Appearance",
   "settings.all": "All settings…",
   "error.preferences": "Could not save preferences. Check the local runtime and retry.",
+  "error.automation": "Could not save this automation. The stored configuration is unchanged.",
   "project.sources": "Files & sources",
   "project.execution": "Execution environment",
   "project.expand": "Expand",
