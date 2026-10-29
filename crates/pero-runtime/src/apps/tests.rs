@@ -1,6 +1,8 @@
+use super::recovery::RecoveryFailure;
 use super::*;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::time::{Duration, Instant};
 
 struct Workspace(PathBuf);
 impl Workspace {
@@ -187,4 +189,135 @@ fn backend_lifecycle() {
         );
         drop(store);
     }
+}
+
+const READ_DRAFT: &str = r#"
+import json, os
+from http.server import BaseHTTPRequestHandler
+from socketserver import TCPServer
+from pathlib import Path
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_): pass
+    def do_GET(self):
+        if self.headers.get('X-Pero-App-Token') != os.environ['PERO_APP_TOKEN']:
+            self.send_response(403); self.end_headers(); return
+        data = Path(os.environ['PERO_APP_DATA'])
+        if self.path.startswith('/crash'):
+            self.send_response(200); self.send_header('Content-Length', '3'); self.end_headers()
+            self.wfile.write(b'bye'); self.wfile.flush(); os._exit(1)
+        body = (data / 'draft.json').read_bytes()
+        self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers()
+        self.wfile.write(body)
+server = TCPServer(('127.0.0.1', 0), Handler)
+print(json.dumps({'port': server.server_address[1]}), flush=True)
+server.serve_forever()
+"#;
+
+fn app_data(apps: &Path, name: &str) -> PathBuf {
+    dunce::canonicalize(apps)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("app-data")
+        .join(name)
+}
+
+fn http_get(url: &str, token: &str, path: &str) -> String {
+    let mut stream = TcpStream::connect(url.strip_prefix("http://").unwrap()).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nX-Pero-App-Token: {token}\r\n\r\n"
+    )
+    .unwrap();
+    let mut reply = String::new();
+    let _ = stream.read_to_string(&mut reply);
+    reply
+}
+
+#[test]
+fn abnormal_exit_reopens_original_app_data() {
+    let workspace = Workspace::new();
+    let source = workspace.package(Some("python"));
+    fs::write(source.join("backend/server.py"), READ_DRAFT).unwrap();
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let apps = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(apps.clone()).unwrap();
+    store.install(&source).unwrap();
+    store.set_enabled(&name, true).unwrap();
+    let data = app_data(&apps, name.as_str());
+    fs::create_dir_all(&data).unwrap();
+    fs::write(data.join("draft.json"), "user draft").unwrap();
+    let first = store.resolve(&name).unwrap().backend.unwrap();
+    assert!(http_get(&first.url, &first.token, "/").contains("user draft"));
+    let _ = http_get(&first.url, &first.token, "/crash");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let second = loop {
+        let access = store.resolve(&name).expect("reopen after exit");
+        let backend = access.backend.expect("backend");
+        if backend.token != first.token {
+            break backend;
+        }
+        assert!(Instant::now() < deadline, "backend did not exit");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(http_get(&second.url, &second.token, "/").contains("user draft"));
+    assert_eq!(
+        fs::read_to_string(data.join("draft.json")).unwrap(),
+        "user draft"
+    );
+    assert!(!RecoveryFailure::path(&data).exists());
+}
+
+#[test]
+fn failed_start_keeps_original_data_and_recovery_record() {
+    let workspace = Workspace::new();
+    let source = workspace.package(Some("python"));
+    let good = fs::read(source.join("backend/server.py")).unwrap();
+    fs::write(
+        source.join("backend/server.py"),
+        "import sys\nsys.exit(1)\n",
+    )
+    .unwrap();
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let apps = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(apps.clone()).unwrap();
+    store.install(&source).unwrap();
+    store.set_enabled(&name, true).unwrap();
+    let data = app_data(&apps, name.as_str());
+    fs::create_dir_all(&data).unwrap();
+    fs::write(data.join("draft.json"), "user draft").unwrap();
+    let error = match store.resolve(&name) {
+        Err(error) => error,
+        Ok(_) => panic!("failed start should keep the recovery record"),
+    };
+    let record_path = RecoveryFailure::path(&data);
+    let record: RecoveryFailure = serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
+    assert_eq!(record.name, name);
+    assert_eq!(record.data, data.display().to_string());
+    assert!(!record.error.is_empty());
+    assert_eq!(
+        error,
+        format!(
+            "{}; recovery record: {}",
+            record.error,
+            record_path.display()
+        )
+    );
+    assert_eq!(
+        fs::read_to_string(data.join("draft.json")).unwrap(),
+        "user draft"
+    );
+    assert!(store.list()[0].enabled);
+    fs::write(apps.join(name.as_str()).join("backend/server.py"), &good).unwrap();
+    let access = store.resolve(&name).unwrap().backend.unwrap();
+    assert!(http_get(&access.url, &access.token, "/").contains("cell-result"));
+    assert_eq!(
+        fs::read_to_string(data.join("draft.json")).unwrap(),
+        "user draft"
+    );
+    assert!(!record_path.exists());
+    assert!(data.join("observed").is_file());
 }

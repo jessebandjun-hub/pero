@@ -35,6 +35,11 @@ App port; its existing scientific methods and source attribution stay in the App
   environment variables. Host shutdown, disable and uninstall clean up the
   owned backend. The trusted `PERO_APP_PYTHON` setting selects the interpreter;
   App manifests cannot choose an arbitrary command or install dependencies.
+- Resolving an enabled App restarts a backend that failed to start or has
+  exited. The restart uses the installed package and the existing
+  `app-data/<name>` directory and does not replace domain files. A failed
+  restart is written to `app-data/<name>/.pero/recovery-error.json`, and the
+  returned error includes that path. A later successful open removes the record.
 - Private `apps_result` replies carry installed paths and optional backend
   URL/token only to Electron main. Main consumes every such reply rather than
   publishing it to the renderer. Public catalog events contain display metadata,
