@@ -63,16 +63,23 @@ pub fn save_locale(path: &Path, locale: &str) -> io::Result<()> {
 }
 
 pub fn load_workbench(path: &Path) -> pero_contracts::workbench::WorkbenchPreferences {
-    std::fs::read(path).ok()
+    std::fs::read(path)
+        .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|value| serde_json::from_value(value["workbench"].clone()).ok())
         .filter(pero_contracts::workbench::WorkbenchPreferences::valid)
         .unwrap_or_default()
 }
 
-pub fn save_workbench(path: &Path, preferences: &pero_contracts::workbench::WorkbenchPreferences) -> io::Result<()> {
+pub fn save_workbench(
+    path: &Path,
+    preferences: &pero_contracts::workbench::WorkbenchPreferences,
+) -> io::Result<()> {
     if !preferences.valid() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid workbench preferences"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid workbench preferences",
+        ));
     }
     let preferences = serde_json::to_value(preferences)?;
     update(path, |value| value["workbench"] = preferences)
@@ -116,11 +123,29 @@ mod tests {
         let preferences = pero_contracts::workbench::WorkbenchPreferences {
             appearance: pero_contracts::workbench::Appearance::Dark,
             projects: vec![pero_contracts::workbench::ProjectBinding {
-                workspace: "/work/pero".into(), project_id: "pero".into(),
+                workspace: "/work/pero".into(),
+                project_id: "pero".into(),
             }],
+            layout: Default::default(),
         };
         save_workbench(&path, &preferences).unwrap();
         assert_eq!(load_workbench(&path), preferences);
+        let stored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(stored["workbench"].get("layout").is_none());
+        let mut sized = preferences.clone();
+        sized.layout = pero_contracts::layout::WorkbenchLayout {
+            sidebar: 300,
+            panel: 400,
+            custom: true,
+        };
+        save_workbench(&path, &sized).unwrap();
+        assert_eq!(load_workbench(&path), sized);
+        let mut invalid = sized.clone();
+        invalid.layout.sidebar = 1;
+        assert!(save_workbench(&path, &invalid).is_err());
+        assert_eq!(load_workbench(&path), sized);
+        save_workbench(&path, &preferences).unwrap();
         save_locale(&path, "en").unwrap();
         let value: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

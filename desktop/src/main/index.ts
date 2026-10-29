@@ -239,7 +239,8 @@ app.whenReady().then(async () => {
     });
     if (!selected.canceled && selected.filePaths[0]) host.stdin.write(JSON.stringify({ action: 'resolve_context', request_id: command.request_id, kind: command.kind, source: selected.filePaths[0] }) + '\n');
   });
-  window = new BrowserWindow({ width: 1488, height: 1086, minWidth: 1000, minHeight: 680,
+  // Widths below 1000 use the navigation drawer. 1000 and wider stay docked.
+  window = new BrowserWindow({ width: 1488, height: 1086, minWidth: 720, minHeight: 680,
     title: t('window.title'), backgroundColor: '#F7F9FC',
     webPreferences: { preload: resolve(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   window.webContents.setWindowOpenHandler(({ url }) => {

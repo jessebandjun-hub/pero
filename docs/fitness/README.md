@@ -4,6 +4,9 @@ Remote dispatch is covered by the Worker tests and `tests/e2e/remote.mjs`. The i
 
 What each suite proves, and where screenshots land, is [tests/README.md](../../tests/README.md). Planned features are in [ROADMAP.md](../../ROADMAP.md).
 
+Adjustable columns and the narrow-window drawer: [adjustable-layout.md](adjustable-layout.md).
+The ROADMAP checkbox stays open until a Desktop drag and drawer pass exists.
+
 The pushed GitHub/ROADMAP connector's public-source and Desktop acceptance is
 recorded in [github-connector-verification.md](github-connector-verification.md).
 

@@ -41,11 +41,18 @@ pub struct WorkbenchPreferences {
     pub appearance: Appearance,
     #[serde(default)]
     pub projects: Vec<ProjectBinding>,
+    /// Absent on unmodified layouts so older saved preferences still load.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::layout::WorkbenchLayout::is_unmodified"
+    )]
+    pub layout: crate::layout::WorkbenchLayout,
 }
 
 impl WorkbenchPreferences {
     pub fn valid(&self) -> bool {
-        self.projects.len() <= 128
+        self.layout.valid()
+            && self.projects.len() <= 128
             && self.projects.iter().enumerate().all(|(i, binding)| {
                 !binding.workspace.trim().is_empty()
                     && binding.workspace.len() <= 4096

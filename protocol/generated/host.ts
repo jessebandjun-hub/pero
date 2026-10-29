@@ -161,10 +161,19 @@ export interface WorkbenchPreferences {
    * @maxItems 128
    */
   projects: ProjectBinding[];
+  layout?: WorkbenchLayout;
 }
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+/**
+ * Docked column widths in logical pixels. Omitted until the user drags.
+ */
+export interface WorkbenchLayout {
+  sidebar: number;
+  panel: number;
+  custom: boolean;
 }
 export interface ListAgentsCommand {
   action: "list_agents";

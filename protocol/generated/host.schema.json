@@ -4103,6 +4103,32 @@
       ],
       "additionalProperties": false
     },
+    "WorkbenchLayout": {
+      "title": "WorkbenchLayout",
+      "type": "object",
+      "properties": {
+        "sidebar": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "panel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "custom": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sidebar",
+        "panel",
+        "custom"
+      ],
+      "additionalProperties": false,
+      "description": "Docked column widths in logical pixels. Omitted until the user drags."
+    },
     "WorkbenchPreferences": {
       "title": "WorkbenchPreferences",
       "type": "object",
@@ -4129,6 +4155,9 @@
             "$ref": "#/$defs/ProjectBinding"
           },
           "maxItems": 128
+        },
+        "layout": {
+          "$ref": "#/$defs/WorkbenchLayout"
         }
       },
       "required": [

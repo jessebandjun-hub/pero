@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 pub mod composer_capabilities;
 pub mod context;
 pub mod i18n;
+pub mod layout;
 pub mod local_worker;
 pub mod roadmap;
 pub mod session_settings;

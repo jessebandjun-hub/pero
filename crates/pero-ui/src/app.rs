@@ -29,6 +29,15 @@ extern "C" {
     pub(crate) fn session_command(json: &str) -> Result<(), JsValue>;
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ColumnResize {
+    pub column: pero_contracts::layout::LayoutColumn,
+    pub origin_x: f32,
+    pub origin: pero_contracts::layout::WorkbenchLayout,
+    pub displayed: u32,
+    pub viewport: f32,
+}
+
 pub(crate) struct Workbench {
     pub input: Entity<InputState>,
     pub locale: String,
@@ -48,6 +57,11 @@ pub(crate) struct Workbench {
     pub task_status: crate::projects::TaskStatusFilter,
     pub pending_project_workspace: bool,
     pub navigation: usize,
+    /// Last viewport width, in logical pixels. Render updates it before handling input.
+    pub viewport_width: f32,
+    pub drawer_open: bool,
+    pub(crate) resize: Option<ColumnResize>,
+    pub(crate) resize_restored: bool,
     pub remote: crate::remote::RemoteState,
     pub local_execution: crate::local_execution::LocalExecution,
     pub contribution: crate::contributions::ContributionState,
@@ -169,6 +183,10 @@ impl Workbench {
             task_status: Default::default(),
             pending_project_workspace: false,
             navigation: 1,
+            viewport_width: 1488.,
+            drawer_open: false,
+            resize: None,
+            resize_restored: false,
             tab: 4,
             connected: false,
             pending: None,

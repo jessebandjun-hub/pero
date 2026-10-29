@@ -1,6 +1,6 @@
 use crate::remote_view::phase;
 use crate::{
-    app::Workbench,
+    app::{ColumnResize, Workbench},
     components::{
         ActionHandler, Ui,
         sidebar::{self, DeleteAffordance, SidebarAction, SidebarProps},
@@ -8,7 +8,12 @@ use crate::{
         workspace::{self, AgentRow, WorkspaceAction},
     },
 };
-use gpui_kit::{prelude::*, *};
+use gpui_kit::{
+    component::{button::*, *},
+    prelude::*,
+    *,
+};
+use pero_contracts::layout::{LayoutChrome, LayoutColumn, LayoutMode};
 use serde_json::json;
 use std::rc::Rc;
 
@@ -42,6 +47,7 @@ impl Workbench {
                     SidebarAction::NewChat => {
                         this.deleting_chat = None;
                         this.new_chat(cx);
+                        this.close_drawer();
                     }
                     SidebarAction::Navigate(index) => {
                         this.deleting_chat = None;
@@ -50,10 +56,12 @@ impl Workbench {
                         if *index == 7 {
                             this.refresh_apps(cx);
                         }
+                        this.close_drawer();
                     }
                     SidebarAction::OpenProject(key) => {
                         this.deleting_chat = None;
                         this.open_project(key.clone(), window, cx);
+                        this.close_drawer();
                     }
                     SidebarAction::ToggleProject(key) => {
                         this.deleting_chat = None;
@@ -65,10 +73,12 @@ impl Workbench {
                         this.deleting_chat = None;
                         this.navigation = 0;
                         this.focus_chat(Some(*index), 4, cx);
+                        this.close_drawer();
                     }
                     SidebarAction::SelectTask(id) => {
                         this.deleting_chat = None;
                         this.open_task(id.clone(), cx);
+                        this.close_drawer();
                     }
                 }
                 cx.notify();
@@ -268,6 +278,110 @@ impl Workbench {
             .collect();
         workspace::environments(self.ui(), &agents, self.workspace_actions(cx))
     }
+
+    pub(crate) fn chrome(&self) -> LayoutChrome {
+        self.preferences
+            .layout
+            .present(self.viewport_width, self.drawer_open)
+    }
+
+    fn close_drawer(&mut self) {
+        self.drawer_open = false;
+    }
+
+    fn end_resize(&mut self, cx: &mut Context<Self>) {
+        let changed = self.resize.take().is_some_and(|resize| {
+            self.preferences.layout != resize.origin && !self.resize_restored
+        });
+        self.resize_restored = false;
+        if changed {
+            let preferences = self.preferences.clone();
+            self.save_preferences(preferences, cx);
+        }
+    }
+
+    pub(crate) fn resize_handle(
+        &self,
+        column: LayoutColumn,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let label = self.t(match column {
+            LayoutColumn::Sidebar => "nav.resize_sidebar",
+            LayoutColumn::Panel => "nav.resize_panel",
+        });
+        let id = match column {
+            LayoutColumn::Sidebar => "sidebar-resize",
+            LayoutColumn::Panel => "panel-resize",
+        };
+        let dragged = column;
+        div()
+            .id(id)
+            .w(px(6.))
+            .cursor(CursorStyle::ResizeLeftRight)
+            .aria_label(label)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    if event.click_count >= 2 {
+                        this.resize = None;
+                        this.resize_restored = true;
+                        let restored = this.preferences.layout.restore();
+                        if restored != this.preferences.layout {
+                            this.preferences.layout = restored;
+                            let preferences = this.preferences.clone();
+                            this.save_preferences(preferences, cx);
+                        }
+                        cx.notify();
+                        return;
+                    }
+                    let chrome = this.chrome();
+                    this.resize_restored = false;
+                    this.resize = Some(ColumnResize {
+                        column,
+                        origin_x: event.position.x.into(),
+                        origin: this.preferences.layout,
+                        displayed: match column {
+                            LayoutColumn::Sidebar => chrome.sidebar,
+                            LayoutColumn::Panel => chrome.panel,
+                        },
+                        viewport: this.viewport_width,
+                    });
+                }),
+            )
+            .on_drag(dragged, |_: &LayoutColumn, _, _, cx| {
+                cx.new(|_| ColumnResizeGhost)
+            })
+            .on_drag_move(
+                cx.listener(move |this, event: &DragMoveEvent<LayoutColumn>, _, cx| {
+                    if this.resize_restored {
+                        return;
+                    }
+                    let Some(resize) = this.resize else {
+                        return;
+                    };
+                    if resize.column != *event.drag(cx) {
+                        return;
+                    }
+                    let delta = f32::from(event.event.position.x) - resize.origin_x;
+                    let next =
+                        resize
+                            .origin
+                            .drag(resize.viewport, resize.column, resize.displayed, delta);
+                    if next != this.preferences.layout {
+                        this.preferences.layout = next;
+                        cx.notify();
+                    }
+                }),
+            )
+    }
+}
+
+struct ColumnResizeGhost;
+
+impl Render for ColumnResizeGhost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size(px(0.))
+    }
 }
 
 impl Render for Workbench {
@@ -296,18 +410,27 @@ impl Render for Workbench {
         self.apply_local_execution(window, cx);
         let width: f32 = window.viewport_size().width.into();
         let height: f32 = window.viewport_size().height.into();
-        let compact = width < 1150.;
+        self.viewport_width = width;
+        let chrome = self.chrome();
+        if chrome.mode == LayoutMode::Docked {
+            self.drawer_open = false;
+        }
         self.follow_task_pages(window, cx);
-        self.sync_app_surface(if compact { 240. } else { 260. }, width, height);
+        self.sync_app_surface(chrome.reserved_left as f32, width, height);
+        let show_sidebar = chrome.mode == LayoutMode::Docked || chrome.drawer_open;
         let p = self.palettes.get(self.dark);
         div()
+            .id("workbench")
+            .relative()
             .size_full()
             .flex()
             .bg(p.color("surface"))
             .text_color(p.color("text"))
             .font_family("Noto Sans CJK SC")
             .text_size(px(14.))
-            .child(self.sidebar(if compact { 240. } else { 260. }, cx))
+            .when(show_sidebar, |el| {
+                el.child(self.sidebar(chrome.sidebar as f32, cx))
+            })
             .child(
                 div()
                     .flex_1()
@@ -315,6 +438,31 @@ impl Render for Workbench {
                     .h_full()
                     .flex()
                     .flex_col()
+                    .when(chrome.mode == LayoutMode::Drawer, |el| {
+                        el.child(
+                            div()
+                                .id("nav-drawer-bar")
+                                .h(px(40.))
+                                .px(px(8.))
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .border_b_1()
+                                .border_color(p.color("border"))
+                                .child(
+                                    Button::new("nav-drawer")
+                                        .ghost()
+                                        .small()
+                                        .h(px(32.))
+                                        .icon(Icon::default().path("icons/layout-list.svg"))
+                                        .label(self.t("nav.menu"))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.drawer_open = !this.drawer_open;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                    })
                     .when(self.error.is_some(), |el| {
                         el.child(
                             div()
@@ -367,6 +515,24 @@ impl Render for Workbench {
                     .when(self.navigation == 10, |el| {
                         el.child(self.general_settings(cx))
                     }),
+            )
+            .when(show_sidebar, |el| {
+                el.child(
+                    self.resize_handle(LayoutColumn::Sidebar, cx)
+                        .absolute()
+                        .left(px(chrome.sidebar as f32 - 3.))
+                        .top(px(0.))
+                        .h_full()
+                        .occlude(),
+                )
+            })
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_resize(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_resize(cx)),
             )
     }
 }
