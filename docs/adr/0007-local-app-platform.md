@@ -30,8 +30,13 @@ App port; its existing scientific methods and source attribution stay in the App
   and the version kept. There is no marketplace or automatic update service.
 - Domain data lives outside the package at the App root's sibling
   `app-data/<name>`. Disable stops the backend; uninstall removes the installed
-  package and retains domain data. Update replaces only the package and leaves
-  that data in place. Reinstall does not import a source package's data as
+  package and retains domain data. An update keeps that data usable. When the
+  incoming package declares a direct migration from the installed version to
+  the target version, the Host renames domain records and writes a receipt
+  listing each record's path before and after with its SHA-256. Records the
+  migration does not name stay in place. A failed migration leaves the previous
+  records and package in place and writes `.pero-migration-error.json` in the
+  domain directory. Reinstall does not import a source package's data as
   accepted research results.
 - The backend starts lazily when an enabled App is resolved. Python binds
   loopback port `0` and writes one readiness line, `{"port": <bound-port>}`.

@@ -86,6 +86,9 @@ pub struct AppDefinition {
     #[serde(default)]
     pub permissions: AppPermissions,
     pub backend: Option<AppBackend>,
+    /// Direct version steps for domain records under `app-data/<name>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub migrations: Vec<super::migration::DataMigration>,
 }
 
 /// Public catalog projection. Backend credentials and filesystem paths stay private.
@@ -164,6 +167,7 @@ impl AppDefinition {
                 );
             }
         }
+        super::migration::validate_declarations(&value.migrations)?;
         Ok(value)
     }
 
@@ -219,6 +223,21 @@ mod tests {
                 false,
             ),
             ("extra", serde_json::json!(true), false),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","rename":{"draft.json":"records/draft.json"}}]),
+                true,
+            ),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","rename":{"../draft.json":"x.json"}}]),
+                false,
+            ),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","script":"migrate.py"}]),
+                false,
+            ),
         ] {
             let mut candidate = valid.clone();
             candidate[key] = value;

@@ -1,5 +1,6 @@
 //! Local App packages and the single owner of their installed state and backends.
 mod definition;
+mod migration;
 mod process;
 pub use definition::{AppDefinition, AppName, AppSummary};
 use process::AppProcess;
@@ -48,6 +49,7 @@ impl AppStore {
             .parent()
             .ok_or("App root needs a parent directory")?
             .join("app-data");
+        migration::recover(&root, &data)?;
         let mut installed = BTreeMap::new();
         for entry in fs::read_dir(&root).map_err(|error| error.to_string())? {
             let entry = entry.map_err(|error| error.to_string())?;
@@ -164,8 +166,9 @@ impl AppStore {
     }
 
     /// Replace the installed package with a local package of the named version.
-    /// Preparation failures leave the running package in place. The previous
-    /// directory is restored when publishing the staged package fails.
+    /// Domain data is migrated, or kept when the package declares no direct
+    /// step, before the package directory is published. A failed migration
+    /// leaves the previous package and records in place.
     pub fn update(
         &mut self,
         name: &AppName,
@@ -173,6 +176,7 @@ impl AppStore {
         source: &Path,
     ) -> Result<Vec<AppSummary>, String> {
         recover_interrupted_updates(&self.root)?;
+        migration::recover(&self.root, &self.data)?;
         let (kept, enabled) = {
             let current = self
                 .installed
@@ -207,17 +211,48 @@ impl AppStore {
             Ok(staging) => staging,
             Err(error) => return fail(error),
         };
+        let prepared =
+            match migration::prepare(&self.data, name, &kept, version, &definition.migrations) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    let _ = fs::remove_dir_all(&staging);
+                    return migration_failed(&self.data, name, version, &kept, &error);
+                }
+            };
         let rollback = self.root.join(format!(".rollback-{}", name.as_str()));
         if rollback.exists() {
+            migration::abort(&self.data, name);
             let _ = fs::remove_dir_all(&staging);
             return fail(format!("backup {} is already present", rollback.display()));
         }
+        if let Err(error) = migration::commit(&self.data, name, &prepared) {
+            migration::abort(&self.data, name);
+            let _ = fs::remove_dir_all(&staging);
+            if error.contains("Backup remains") {
+                return Err(format!(
+                    "Update of {} to {version} failed: {error}. Kept installed version {kept}.",
+                    name.as_str()
+                ));
+            }
+            return migration_failed(&self.data, name, version, &kept, &error);
+        }
         if let Err(error) = fs::rename(&target, &rollback) {
+            if let Err(data_error) = migration::restore(&self.data, name, &prepared) {
+                let _ = fs::remove_dir_all(&staging);
+                return Err(format!(
+                    "Update of {} to {version} failed: {error}. Restoring domain data failed: {data_error}. Backup remains at {}.",
+                    name.as_str(),
+                    self.data
+                        .join(format!(".rollback-{}", name.as_str()))
+                        .display()
+                ));
+            }
             let _ = fs::remove_dir_all(&staging);
             return fail(error.to_string());
         }
         if let Err(error) = fs::rename(&staging, &target) {
             let restored = fs::rename(&rollback, &target);
+            let data_restored = migration::restore(&self.data, name, &prepared);
             let _ = fs::remove_dir_all(&staging);
             if let Err(restore_error) = restored {
                 return Err(format!(
@@ -226,12 +261,47 @@ impl AppStore {
                     rollback.display()
                 ));
             }
+            if let Err(data_error) = data_restored {
+                return Err(format!(
+                    "Update of {} to {version} failed: {error}. Restoring domain data failed: {data_error}. Backup remains at {}.",
+                    name.as_str(),
+                    self.data
+                        .join(format!(".rollback-{}", name.as_str()))
+                        .display()
+                ));
+            }
             return fail(error.to_string());
+        }
+        if let Err(error) = migration::finish(&self.data, name, &prepared) {
+            let parked = self.root.join(format!(".publish-{}", name.as_str()));
+            let _ = fs::remove_dir_all(&parked);
+            match fs::rename(&target, &parked) {
+                Ok(()) => {
+                    if let Err(restore_error) = fs::rename(&rollback, &target) {
+                        let _ = fs::rename(&parked, &target);
+                        return Err(format!(
+                            "Update of {} to {version} failed: {error}. Restoring installed version {kept} failed: {restore_error}. Backup remains at {}.",
+                            name.as_str(),
+                            rollback.display()
+                        ));
+                    }
+                    let _ = fs::remove_dir_all(&parked);
+                }
+                Err(restore_error) => {
+                    return Err(format!(
+                        "Update of {} to {version} failed: {error}. Restoring installed version {kept} failed: {restore_error}. Backup remains at {}.",
+                        name.as_str(),
+                        rollback.display()
+                    ));
+                }
+            }
+            return migration_failed(&self.data, name, version, &kept, &error);
         }
         // The published directory is the new package. Stop the previous backend
         // so the next resolve runs this version, then drop the backup.
         self.processes.remove(name);
         let _ = fs::remove_dir_all(&rollback);
+        let _ = fs::remove_dir_all(self.data.join(format!(".rollback-{}", name.as_str())));
         self.installed.insert(
             name.clone(),
             AppInstallation {
@@ -390,6 +460,27 @@ fn recover_interrupted_updates(root: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn migration_failed(
+    data_root: &Path,
+    name: &AppName,
+    version: &str,
+    kept: &str,
+    reason: &str,
+) -> Result<Vec<AppSummary>, String> {
+    match migration::write_failure(data_root, name, kept, version, reason) {
+        Ok(path) => Err(format!(
+            "Update of {} to {version} failed: {reason}. Kept installed version {kept} and domain data at {}. Error record: {}.",
+            name.as_str(),
+            data_root.join(name.as_str()).display(),
+            path.display()
+        )),
+        Err(write_error) => Err(format!(
+            "Update of {} to {version} failed: {reason}. Kept installed version {kept}. Writing the migration error record failed: {write_error}.",
+            name.as_str()
+        )),
+    }
 }
 
 fn write_record(root: &Path, enabled: bool) -> Result<(), String> {

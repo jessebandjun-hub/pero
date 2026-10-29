@@ -245,10 +245,12 @@ fn update_replaces_only_the_specified_version() {
     assert!(request(&token).contains("cell-result"));
 
     let missing = AppName::try_from("missing-app".to_string()).unwrap();
-    assert!(store
-        .update(&missing, "0.2.0", &source)
-        .unwrap_err()
-        .contains("missing-app is not installed"));
+    assert!(
+        store
+            .update(&missing, "0.2.0", &source)
+            .unwrap_err()
+            .contains("missing-app is not installed")
+    );
     let invalid = store.update(&name, "", &source).unwrap_err();
     assert!(invalid.contains("invalid version"), "{invalid}");
     assert!(
@@ -379,5 +381,199 @@ fn interrupted_update_recovery() {
     let store = AppStore::open(root).unwrap();
     assert_eq!(store.list()[0].version, "0.1.0");
     assert!(store.list()[0].enabled);
+    assert!(!rollback.exists());
+}
+
+fn declare_migration(dir: &Path, from: &str, to: &str, rename: &[(&str, &str)], body: &str) {
+    rewrite(dir, to, body, "virtual-cell");
+    let path = dir.join("app.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut mapped = serde_json::Map::new();
+    for (source, destination) in rename {
+        mapped.insert((*source).to_owned(), serde_json::json!(destination));
+    }
+    manifest["migrations"] = serde_json::json!([{
+        "from": from,
+        "to": to,
+        "rename": mapped,
+    }]);
+    fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+}
+
+#[test]
+fn update_migrates_domain_records_and_keeps_them_when_migration_fails() {
+    let workspace = Workspace::new();
+    let source = workspace.package(None);
+    fs::write(source.join("dist/index.html"), "running-0.1.0").unwrap();
+    let root = workspace.0.join("managed/apps");
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let mut store = AppStore::open(root.clone()).unwrap();
+    store.install(&source).unwrap();
+    store.set_enabled(&name, true).unwrap();
+    let data = workspace.0.join("managed/app-data/virtual-cell");
+    fs::create_dir_all(&data).unwrap();
+    fs::write(data.join("draft.json"), "user draft").unwrap();
+    fs::write(data.join("notes.txt"), "kept").unwrap();
+
+    let next = workspace.0.join("v2");
+    copy_tree(&source, &next);
+    declare_migration(
+        &next,
+        "0.1.0",
+        "0.2.0",
+        &[("draft.json", "records/draft.json")],
+        "running-0.2.0",
+    );
+    let listed = store.update(&name, "0.2.0", &next).unwrap();
+    assert_eq!(listed[0].version, "0.2.0");
+    assert!(listed[0].enabled);
+    assert_eq!(
+        fs::read_to_string(data.join("records/draft.json")).unwrap(),
+        "user draft"
+    );
+    assert!(!data.join("draft.json").exists());
+    assert_eq!(fs::read_to_string(data.join("notes.txt")).unwrap(), "kept");
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(data.join(super::migration::RECEIPT_FILE)).unwrap())
+            .unwrap();
+    assert_eq!(receipt["from"], "0.1.0");
+    assert_eq!(receipt["to"], "0.2.0");
+    let records = receipt["records"].as_array().unwrap();
+    let draft = records
+        .iter()
+        .find(|record| record["before"] == "draft.json")
+        .unwrap();
+    assert_eq!(draft["after"], "records/draft.json");
+    assert_eq!(draft["sha256"], super::migration::sha256_hex(b"user draft"));
+    let notes = records
+        .iter()
+        .find(|record| record["before"] == "notes.txt")
+        .unwrap();
+    assert_eq!(notes["after"], "notes.txt");
+    assert_eq!(notes["sha256"], super::migration::sha256_hex(b"kept"));
+    assert_eq!(
+        fs::read_to_string(root.join("virtual-cell/dist/index.html")).unwrap(),
+        "running-0.2.0"
+    );
+    assert!(!data.join(super::migration::ERROR_FILE).exists());
+
+    #[cfg(unix)]
+    {
+        let linked = workspace.0.join("v3-link");
+        copy_tree(&source, &linked);
+        rewrite(&linked, "0.3.0", "running-0.3.0", "virtual-cell");
+        std::os::unix::fs::symlink("notes.txt", data.join("leak")).unwrap();
+        let error = store.update(&name, "0.3.0", &linked).unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+        assert!(error.contains("Error record"), "{error}");
+        assert!(error.contains("Kept installed version 0.2.0"), "{error}");
+        assert_eq!(
+            fs::read_to_string(data.join("records/draft.json")).unwrap(),
+            "user draft"
+        );
+        assert_eq!(store.list()[0].version, "0.2.0");
+        fs::remove_file(data.join("leak")).unwrap();
+    }
+
+    fs::write(data.join("kept.json"), "stay").unwrap();
+    let collision = workspace.0.join("v3");
+    copy_tree(&source, &collision);
+    declare_migration(
+        &collision,
+        "0.2.0",
+        "0.3.0",
+        &[("records/draft.json", "kept.json")],
+        "running-0.3.0",
+    );
+    let error = store.update(&name, "0.3.0", &collision).unwrap_err();
+    assert!(error.contains("onto kept.json"), "{error}");
+    assert!(error.contains("Kept installed version 0.2.0"), "{error}");
+    assert!(error.contains(super::migration::ERROR_FILE), "{error}");
+    assert_eq!(store.list()[0].version, "0.2.0");
+    assert!(store.list()[0].enabled);
+    assert_eq!(
+        fs::read_to_string(data.join("records/draft.json")).unwrap(),
+        "user draft"
+    );
+    assert_eq!(fs::read_to_string(data.join("kept.json")).unwrap(), "stay");
+    assert_eq!(fs::read_to_string(data.join("notes.txt")).unwrap(), "kept");
+    assert_eq!(
+        fs::read_to_string(root.join("virtual-cell/dist/index.html")).unwrap(),
+        "running-0.2.0"
+    );
+    let recorded: serde_json::Value =
+        serde_json::from_slice(&fs::read(data.join(super::migration::ERROR_FILE)).unwrap())
+            .unwrap();
+    assert_eq!(recorded["from"], "0.2.0");
+    assert_eq!(recorded["to"], "0.3.0");
+    assert!(recorded["error"].as_str().unwrap().contains("kept.json"));
+    assert!(!root.join(".rollback-virtual-cell").exists());
+    assert!(
+        !workspace
+            .0
+            .join("managed/app-data/.rollback-virtual-cell")
+            .exists()
+    );
+}
+
+#[test]
+fn interrupted_data_migration_restores_previous_records() {
+    let workspace = Workspace::new();
+    let source = workspace.package(None);
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    store.install(&source).unwrap();
+    drop(store);
+
+    let data_root = workspace.0.join("managed/app-data");
+    let live = data_root.join("virtual-cell");
+    fs::create_dir_all(&live).unwrap();
+    fs::write(live.join("draft.json"), "original").unwrap();
+    let staging = data_root.join(".staging-virtual-cell");
+    fs::create_dir(&staging).unwrap();
+    fs::write(staging.join("junk"), "partial").unwrap();
+    let rollback = data_root.join(".rollback-virtual-cell");
+    fs::rename(&live, &rollback).unwrap();
+    fs::create_dir(&live).unwrap();
+    fs::write(live.join("migrated.txt"), "new").unwrap();
+    fs::write(
+        live.join(super::migration::RECEIPT_FILE),
+        r#"{"from":"0.1.0","to":"0.2.0","records":[]}"#,
+    )
+    .unwrap();
+
+    let store = AppStore::open(root.clone()).unwrap();
+    assert_eq!(store.list()[0].version, "0.1.0");
+    assert_eq!(
+        fs::read_to_string(live.join("draft.json")).unwrap(),
+        "original"
+    );
+    assert!(!live.join("migrated.txt").exists());
+    assert!(!rollback.exists());
+    assert!(!staging.exists());
+    drop(store);
+
+    let manifest = root.join("virtual-cell/app.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    value["version"] = "0.2.0".into();
+    fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+    fs::create_dir(&rollback).unwrap();
+    fs::write(rollback.join("draft.json"), "original").unwrap();
+    fs::remove_file(live.join("draft.json")).unwrap();
+    fs::write(live.join("migrated.txt"), "new").unwrap();
+    fs::write(
+        live.join(super::migration::RECEIPT_FILE),
+        r#"{"from":"0.1.0","to":"0.2.0","records":[]}"#,
+    )
+    .unwrap();
+    let store = AppStore::open(root).unwrap();
+    assert_eq!(store.list()[0].version, "0.2.0");
+    assert_eq!(
+        fs::read_to_string(live.join("migrated.txt")).unwrap(),
+        "new"
+    );
+    assert!(!live.join("draft.json").exists());
     assert!(!rollback.exists());
 }
