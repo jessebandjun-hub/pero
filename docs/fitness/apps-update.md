@@ -59,6 +59,6 @@ Desktop `DesktopApps` still accepts only list, install, enable, disable,
 uninstall, and open. The workbench catalog already renders `version`, and no
 Desktop session was run for a successful update or a failed update that keeps
 the previous package openable. There is no marketplace or automatic update
-service. Version-to-version domain data migration remains the separate
-ROADMAP item 「App 数据迁移」; this slice leaves the previous data files in
-place and does not transform them.
+service. A declared direct data migration is recorded in
+[apps-data-migration.md](apps-data-migration.md). Without that declaration,
+an update leaves the previous data files in place.
