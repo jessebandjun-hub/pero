@@ -8,7 +8,11 @@ model AppClosed { ...Record<never>; }
 @minLength(1) @maxLength(128) scalar RequestId extends string;
 
 model AppPanel { id: AppName; title: string; entry: string; ...AppClosed; }
-/** Public catalog: no local paths or backend credentials. */
+/** Declared host permission requirements. This host grants none, so installed records publish an empty list. */
+model AppPermissions { host: string[]; ...AppClosed; }
+/** Runtime the App needs. `none` is a panel with no backend. */
+model AppEnvironment { runtime: "none" | "python" | "node"; ...AppClosed; }
+/** Public catalog: no local paths, backend credentials, or grants. */
 model AppRecord {
   name: AppName;
   version: string;
@@ -16,6 +20,8 @@ model AppRecord {
   description: string;
   enabled: boolean;
   panels: AppPanel[];
+  permissions: AppPermissions;
+  environment: AppEnvironment;
   ...AppClosed;
 }
 /** Host-to-main-process descriptor. Never forwarded to App or Workbench renderers. */

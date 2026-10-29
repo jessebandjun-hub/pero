@@ -728,7 +728,7 @@ export interface AppSuccess {
   value: AppRecord[] | AppAccess;
 }
 /**
- * Public catalog: no local paths or backend credentials.
+ * Public catalog: no local paths, backend credentials, or grants.
  */
 export interface AppRecord {
   name: AppName;
@@ -737,11 +737,25 @@ export interface AppRecord {
   description: string;
   enabled: boolean;
   panels: AppPanel[];
+  permissions: AppPermissions;
+  environment: AppEnvironment;
 }
 export interface AppPanel {
   id: AppName;
   title: string;
   entry: string;
+}
+/**
+ * Declared host permission requirements. This host grants none, so installed records publish an empty list.
+ */
+export interface AppPermissions {
+  host: string[];
+}
+/**
+ * Runtime the App needs. `none` is a panel with no backend.
+ */
+export interface AppEnvironment {
+  runtime: "none" | "python" | "node";
 }
 export interface AppAccess {
   root: string;
