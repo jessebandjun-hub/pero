@@ -1,6 +1,6 @@
 //! Automation section of the Desktop settings page.
 use crate::{
-    app::{Workbench, session_command},
+    app::{session_command, Workbench},
     automation_page::{AutomationPending, AutomationScreenState},
 };
 use gpui_kit::{
@@ -30,28 +30,40 @@ impl Workbench {
     }
 
     pub(crate) fn note_automation_typing(&mut self, cx: &mut Context<Self>) {
+        let name = self.automation_name.read(cx).value().to_string();
+        let instruction = self.automation_instruction.read(cx).value().to_string();
+        if self.automation.creating() {
+            let id = self.automation_id.read(cx).value().to_string();
+            self.automation.note_create(&id, &name, &instruction);
+            return;
+        }
         let Some(id) = self.automation.selected_id().map(str::to_string) else {
             return;
         };
-        let name = self.automation_name.read(cx).value().to_string();
-        let instruction = self.automation_instruction.read(cx).value().to_string();
         self.automation.note_typing(&id, &name, &instruction);
     }
 
     pub(crate) fn apply_automation_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((name, instruction)) = self.automation.take_input_fill() else {
+        let Some(fill) = self.automation.take_input_fill() else {
             return;
         };
-        self.fill_automation_inputs(name, instruction, window, cx);
+        self.fill_automation_inputs(fill.id, fill.name, fill.instruction, window, cx);
     }
 
     fn fill_automation_inputs(
         &mut self,
+        id: Option<String>,
         name: String,
         instruction: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(id) = id {
+            if self.automation_id.read(cx).value().to_string() != id {
+                self.automation_id
+                    .update(cx, |input, cx| input.set_value(id, window, cx));
+            }
+        }
         if self.automation_name.read(cx).value().to_string() != name {
             self.automation_name
                 .update(cx, |input, cx| input.set_value(name, window, cx));
@@ -78,7 +90,9 @@ impl Workbench {
             AutomationScreenState::Disabled => self.t("settings.automations_disabled"),
             AutomationScreenState::Loading => self.t("settings.automations_loading"),
             AutomationScreenState::Empty => self.t("settings.automations_empty"),
-            AutomationScreenState::Error => self.t(screen.error.as_deref().unwrap_or("error.automation")),
+            AutomationScreenState::Error => {
+                self.t(screen.error.as_deref().unwrap_or("error.automation"))
+            }
             AutomationScreenState::Ready => "",
         };
         let alert = matches!(screen.state, AutomationScreenState::Error);
@@ -98,11 +112,16 @@ impl Workbench {
         });
         let paused = selected_row.as_ref().is_some_and(|row| row.paused);
         let actions_enabled = screen.actions_enabled;
-        let show_form = selected_row.is_some()
-            && !matches!(
-                screen.state,
-                AutomationScreenState::Loading | AutomationScreenState::Empty
-            );
+        let fields_enabled = if screen.creating {
+            screen.can_create
+        } else {
+            actions_enabled
+        };
+        let show_edit = !screen.creating
+            && selected_row.is_some()
+            && !matches!(screen.state, AutomationScreenState::Loading);
+        let show_create =
+            screen.creating && !matches!(screen.state, AutomationScreenState::Loading);
         div()
             .id("automation-settings")
             .border_t_1()
@@ -142,6 +161,19 @@ impl Workbench {
                         .on_click(cx.listener(|this, _, _, cx| this.request_automations(cx))),
                 )
             })
+            .when(!screen.creating && !screen.rows.is_empty(), |el| {
+                el.child(
+                    Button::new("automation-new")
+                        .outline()
+                        .label(self.t("settings.automations_new"))
+                        .disabled(!screen.can_create)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            if this.automation.begin_create() {
+                                this.apply_automation_inputs(window, cx);
+                            }
+                        })),
+                )
+            })
             .when(!screen.rows.is_empty(), |el| {
                 el.child(div().flex().flex_wrap().gap(px(8.)).children(
                     screen.rows.iter().enumerate().map(|(index, row)| {
@@ -162,103 +194,156 @@ impl Workbench {
                             .toggled(selected.as_deref() == Some(row.id.as_str()))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if let Some((name, instruction)) = this.automation.select(&id) {
-                                    this.fill_automation_inputs(name, instruction, window, cx);
+                                    this.fill_automation_inputs(
+                                        None,
+                                        name,
+                                        instruction,
+                                        window,
+                                        cx,
+                                    );
                                 }
                             }))
                     }),
                 ))
             })
-            .when(show_form, |el| {
+            .when(show_create || show_edit, |el| {
                 el.child(
                     div()
                         .flex()
                         .flex_col()
                         .gap(px(10.))
                         .max_w(px(640.))
+                        .when(show_create, |el| {
+                            el.child(self.t("settings.automations_id")).child(
+                                Input::new(&self.automation_id)
+                                    .accessibility_id("automation-id")
+                                    .aria_label(self.t("settings.automations_id"))
+                                    .disabled(!fields_enabled),
+                            )
+                        })
                         .child(self.t("settings.automations_name"))
                         .child(
                             Input::new(&self.automation_name)
                                 .accessibility_id("automation-name")
                                 .aria_label(self.t("settings.automations_name"))
-                                .disabled(!actions_enabled),
+                                .disabled(!fields_enabled),
                         )
                         .child(self.t("settings.automations_instruction"))
                         .child(
                             Textarea::new(&self.automation_instruction)
                                 .accessibility_id("automation-instruction")
                                 .aria_label(self.t("settings.automations_instruction"))
-                                .disabled(!actions_enabled)
+                                .disabled(!fields_enabled)
                                 .h(px(96.)),
                         )
-                        .when_some(stored_name, |el, name| {
-                            el.child(
+                        .when(show_edit, |el| {
+                            el.when_some(stored_name, |el, name| {
+                                el.child(
+                                    div()
+                                        .id("automation-stored")
+                                        .text_size(px(12.))
+                                        .text_color(p.color("text-muted"))
+                                        .whitespace_normal()
+                                        .child(format!(
+                                            "{} · {name}",
+                                            self.t("settings.automations_stored")
+                                        )),
+                                )
+                            })
+                            .child(
                                 div()
-                                    .id("automation-stored")
-                                    .text_size(px(12.))
-                                    .text_color(p.color("text-muted"))
-                                    .whitespace_normal()
-                                    .child(format!(
-                                        "{} · {name}",
-                                        self.t("settings.automations_stored")
-                                    )),
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap(px(8.))
+                                    .child(
+                                        Button::new("automation-pause")
+                                            .outline()
+                                            .label(self.t("settings.automations_pause"))
+                                            .loading(
+                                                screen.pending == Some(AutomationPending::Pause),
+                                            )
+                                            .disabled(!actions_enabled || paused)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Some(command) =
+                                                    this.automation.pause(this.connected)
+                                                {
+                                                    this.send_automation(command, cx);
+                                                }
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("automation-resume")
+                                            .outline()
+                                            .label(self.t("settings.automations_resume"))
+                                            .loading(
+                                                screen.pending == Some(AutomationPending::Resume),
+                                            )
+                                            .disabled(!actions_enabled || !paused)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Some(command) =
+                                                    this.automation.resume(this.connected)
+                                                {
+                                                    this.send_automation(command, cx);
+                                                }
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("automation-save")
+                                            .primary()
+                                            .label(self.t("settings.automations_save"))
+                                            .loading(
+                                                screen.pending == Some(AutomationPending::Update),
+                                            )
+                                            .disabled(!actions_enabled)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                let name = this
+                                                    .automation_name
+                                                    .read(cx)
+                                                    .value()
+                                                    .to_string();
+                                                let instruction = this
+                                                    .automation_instruction
+                                                    .read(cx)
+                                                    .value()
+                                                    .to_string();
+                                                if let Some(command) = this.automation.update(
+                                                    this.connected,
+                                                    name,
+                                                    instruction,
+                                                ) {
+                                                    this.send_automation(command, cx);
+                                                }
+                                            })),
+                                    ),
                             )
                         })
-                        .child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .gap(px(8.))
-                                .child(
-                                    Button::new("automation-pause")
-                                        .outline()
-                                        .label(self.t("settings.automations_pause"))
-                                        .loading(screen.pending == Some(AutomationPending::Pause))
-                                        .disabled(!actions_enabled || paused)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            if let Some(command) = this.automation.pause(this.connected)
-                                            {
-                                                this.send_automation(command, cx);
-                                            }
-                                        })),
-                                )
-                                .child(
-                                    Button::new("automation-resume")
-                                        .outline()
-                                        .label(self.t("settings.automations_resume"))
-                                        .loading(screen.pending == Some(AutomationPending::Resume))
-                                        .disabled(!actions_enabled || !paused)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            if let Some(command) =
-                                                this.automation.resume(this.connected)
-                                            {
-                                                this.send_automation(command, cx);
-                                            }
-                                        })),
-                                )
-                                .child(
-                                    Button::new("automation-save")
-                                        .primary()
-                                        .label(self.t("settings.automations_save"))
-                                        .loading(screen.pending == Some(AutomationPending::Update))
-                                        .disabled(!actions_enabled)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            let name =
-                                                this.automation_name.read(cx).value().to_string();
-                                            let instruction = this
-                                                .automation_instruction
-                                                .read(cx)
-                                                .value()
-                                                .to_string();
-                                            if let Some(command) = this.automation.update(
-                                                this.connected,
-                                                name,
-                                                instruction,
-                                            ) {
-                                                this.send_automation(command, cx);
-                                            }
-                                        })),
-                                ),
-                        ),
+                        .when(show_create, |el| {
+                            el.child(
+                                Button::new("automation-create")
+                                    .primary()
+                                    .label(self.t("settings.automations_create"))
+                                    .loading(screen.pending == Some(AutomationPending::Create))
+                                    .disabled(!screen.can_create)
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        let id = this.automation_id.read(cx).value().to_string();
+                                        let name =
+                                            this.automation_name.read(cx).value().to_string();
+                                        let instruction = this
+                                            .automation_instruction
+                                            .read(cx)
+                                            .value()
+                                            .to_string();
+                                        if let Some(command) = this.automation.create(
+                                            this.connected,
+                                            id,
+                                            name,
+                                            instruction,
+                                        ) {
+                                            this.send_automation(command, cx);
+                                        }
+                                    })),
+                            )
+                        }),
                 )
             })
     }

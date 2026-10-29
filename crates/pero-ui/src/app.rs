@@ -39,6 +39,7 @@ pub(crate) struct Workbench {
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
     pub automation: crate::automation_page::AutomationPage,
+    pub automation_id: Entity<InputState>,
     pub automation_name: Entity<InputState>,
     pub automation_instruction: Entity<TextareaState>,
     pub settings_menu_open: bool,
@@ -146,6 +147,12 @@ impl Workbench {
             }
             cx.notify();
         }));
+        let automation_id = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(pero_contracts::i18n::text(
+                &locale,
+                "settings.automations_id",
+            ))
+        });
         let automation_name = cx.new(|cx| {
             InputState::new(window, cx).placeholder(pero_contracts::i18n::text(
                 &locale,
@@ -158,6 +165,12 @@ impl Workbench {
                 "settings.automations_instruction",
             ))
         });
+        subscriptions.push(cx.subscribe(&automation_id, |this, _, event, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.note_automation_typing(cx);
+            }
+            cx.notify();
+        }));
         subscriptions.push(cx.subscribe(&automation_name, |this, _, event, cx| {
             if matches!(event, InputEvent::Change) {
                 this.note_automation_typing(cx);
@@ -190,6 +203,7 @@ impl Workbench {
             preferences: Default::default(),
             preferences_status: Default::default(),
             automation: Default::default(),
+            automation_id,
             automation_name,
             automation_instruction,
             settings_menu_open: false,

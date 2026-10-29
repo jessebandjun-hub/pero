@@ -1,14 +1,14 @@
-//! Settings page for automations the Host already stores.
+//! Settings page for automations stored by the Host.
 //!
-//! Pause, resume, and update send `settings.automation` commands. The page
-//! shows `automation_settings.data` and keeps a typed draft when
-//! `automation_settings_error` arrives, because that event carries no catalog.
-//! Creating an automation is not a command.
+//! Pause, resume, update, and create send `settings.automation` commands. The
+//! page shows `automation_settings.data`. A rejected command keeps the typed
+//! draft, because `automation_settings_error` carries no catalog. A successful
+//! create replaces the shown catalog with the stored one.
 
 use pero_contracts::automation::{AutomationCatalog, AutomationDraft, AutomationEditor};
 use pero_contracts::HostEvent;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,6 +26,31 @@ pub(crate) enum AutomationPending {
     Pause,
     Resume,
     Update,
+    Create,
+}
+
+/// Uncommitted id, name, and instruction for an automation that is not stored yet.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct AutomationCreateDraft {
+    pub id: String,
+    pub name: String,
+    pub instruction: String,
+}
+
+impl AutomationCreateDraft {
+    fn blank(&self) -> bool {
+        self.id.trim().is_empty()
+            && self.name.trim().is_empty()
+            && self.instruction.trim().is_empty()
+    }
+}
+
+/// Text the settings inputs should show. `id` is set only while creating.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AutomationInputFill {
+    pub id: Option<String>,
+    pub name: String,
+    pub instruction: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -49,6 +74,10 @@ pub(crate) struct AutomationScreen {
     pub actions_enabled: bool,
     pub pending: Option<AutomationPending>,
     pub can_retry: bool,
+    /// The form is collecting a new id, name, and instruction.
+    pub creating: bool,
+    pub create: Option<AutomationCreateDraft>,
+    pub can_create: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,7 +87,9 @@ pub(crate) struct AutomationPage {
     error: Option<String>,
     selected: Option<String>,
     pending: Option<AutomationPending>,
-    fill: Option<(String, String)>,
+    creating: bool,
+    create_draft: AutomationCreateDraft,
+    fill: Option<AutomationInputFill>,
 }
 
 impl Default for AutomationPage {
@@ -69,6 +100,8 @@ impl Default for AutomationPage {
             error: None,
             selected: None,
             pending: None,
+            creating: false,
+            create_draft: AutomationCreateDraft::default(),
             fill: None,
         }
     }
@@ -82,25 +115,26 @@ impl AutomationPage {
             .map(|editor| editor.saved().clone())
             .unwrap_or_default();
         let rows = self.rows();
-        let actions_enabled = connected
-            && self.pending.is_none()
-            && !self.loading
-            && self.selected.is_some();
+        let actions_enabled =
+            connected && self.pending.is_none() && !self.loading && self.selected.is_some();
         let can_retry = connected
             && self.editor.is_none()
             && self.error.is_some()
             && !self.loading
             && self.pending.is_none();
+        let can_create =
+            connected && self.editor.is_some() && self.pending.is_none() && !self.loading;
+        let creating = self.creating && self.editor.is_some();
         let state = if !connected {
             AutomationScreenState::Disabled
         } else if self.editor.is_none() && self.loading {
             AutomationScreenState::Loading
         } else if self.editor.is_none() {
             AutomationScreenState::Error
-        } else if data.automations.is_empty() {
-            AutomationScreenState::Empty
         } else if self.error.is_some() {
             AutomationScreenState::Error
+        } else if data.automations.is_empty() {
+            AutomationScreenState::Empty
         } else {
             AutomationScreenState::Ready
         };
@@ -109,15 +143,26 @@ impl AutomationPage {
             data,
             rows,
             error: self.error.clone(),
-            selected: self.selected.clone(),
+            selected: if creating {
+                None
+            } else {
+                self.selected.clone()
+            },
             actions_enabled,
             pending: self.pending,
             can_retry,
+            creating,
+            create: creating.then(|| self.create_draft.clone()),
+            can_create,
         }
     }
 
     pub(crate) fn selected_id(&self) -> Option<&str> {
         self.selected.as_deref()
+    }
+
+    pub(crate) fn creating(&self) -> bool {
+        self.creating && self.editor.is_some()
     }
 
     pub(crate) fn awaiting(&self) -> bool {
@@ -137,18 +182,16 @@ impl AutomationPage {
 
     pub(crate) fn receive(&mut self, event: &HostEvent) {
         match event.kind.as_str() {
-            "automation_settings" => match serde_json::from_value::<AutomationCatalog>(event.data.clone())
-            {
-                Ok(catalog) => {
-                    let _ = self.show_catalog(catalog);
+            "automation_settings" => {
+                match serde_json::from_value::<AutomationCatalog>(event.data.clone()) {
+                    Ok(catalog) => {
+                        let _ = self.show_catalog(catalog);
+                    }
+                    Err(_) => self.rejected("error.automation"),
                 }
-                Err(_) => self.rejected("error.automation"),
-            },
+            }
             "automation_settings_error" => {
-                let key = event
-                    .message_key
-                    .as_deref()
-                    .unwrap_or("error.automation");
+                let key = event.message_key.as_deref().unwrap_or("error.automation");
                 self.rejected(key);
             }
             "disconnected" => {
@@ -160,9 +203,38 @@ impl AutomationPage {
     }
 
     pub(crate) fn select(&mut self, id: &str) -> Option<(String, String)> {
-        let (name, instruction) = self.editor.as_ref().and_then(|editor| editor.shown_text(id))?;
+        let (name, instruction) = self
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.shown_text(id))?;
+        self.creating = false;
         self.selected = Some(id.to_string());
         Some((name.to_string(), instruction.to_string()))
+    }
+
+    /// Remember id, name, and instruction for an automation that is not stored yet.
+    pub(crate) fn note_create(&mut self, id: &str, name: &str, instruction: &str) -> bool {
+        if !self.creating || self.editor.is_none() {
+            return false;
+        }
+        self.create_draft = AutomationCreateDraft {
+            id: id.to_string(),
+            name: name.to_string(),
+            instruction: instruction.to_string(),
+        };
+        true
+    }
+
+    /// Show the create form. A catalog must already be loaded, and no command
+    /// may be in flight. The previous create draft stays in the inputs.
+    pub(crate) fn begin_create(&mut self) -> bool {
+        if self.editor.is_none() || self.pending.is_some() || self.loading {
+            return false;
+        }
+        self.creating = true;
+        self.error = None;
+        self.queue_create_fill();
+        true
     }
 
     /// Remember text for the selected stored automation.
@@ -180,11 +252,19 @@ impl AutomationPage {
     }
 
     pub(crate) fn pause(&mut self, connected: bool) -> Option<Value> {
-        self.transition(connected, AutomationPending::Pause, "settings.automation.pause")
+        self.transition(
+            connected,
+            AutomationPending::Pause,
+            "settings.automation.pause",
+        )
     }
 
     pub(crate) fn resume(&mut self, connected: bool) -> Option<Value> {
-        self.transition(connected, AutomationPending::Resume, "settings.automation.resume")
+        self.transition(
+            connected,
+            AutomationPending::Resume,
+            "settings.automation.resume",
+        )
     }
 
     /// Record the typed name and instruction, then ask the Host to store them.
@@ -204,7 +284,37 @@ impl AutomationPage {
         }
         self.pending = Some(AutomationPending::Update);
         self.error = None;
-        Some(json!({"method":"settings.automation.update","id":id,"name":name,"instruction":instruction}))
+        Some(
+            json!({"method":"settings.automation.update","id":id,"name":name,"instruction":instruction}),
+        )
+    }
+
+    /// Record the typed id, name, and instruction, then ask the Host to append
+    /// them. A disconnected Host keeps the draft and sends nothing.
+    pub(crate) fn create(
+        &mut self,
+        connected: bool,
+        id: String,
+        name: String,
+        instruction: String,
+    ) -> Option<Value> {
+        if self.editor.is_none() {
+            return None;
+        }
+        self.creating = true;
+        self.create_draft = AutomationCreateDraft {
+            id: id.clone(),
+            name: name.clone(),
+            instruction: instruction.clone(),
+        };
+        if !connected || self.pending.is_some() || self.loading {
+            return None;
+        }
+        self.pending = Some(AutomationPending::Create);
+        self.error = None;
+        Some(
+            json!({"method":"settings.automation.create","id":id,"name":name,"instruction":instruction}),
+        )
     }
 
     pub(crate) fn rejected(&mut self, key: &str) {
@@ -214,7 +324,7 @@ impl AutomationPage {
         self.error = Some(key.to_string());
     }
 
-    pub(crate) fn take_input_fill(&mut self) -> Option<(String, String)> {
+    pub(crate) fn take_input_fill(&mut self) -> Option<AutomationInputFill> {
         self.fill.take()
     }
 
@@ -242,6 +352,7 @@ impl AutomationPage {
     }
 
     fn show_catalog(&mut self, catalog: AutomationCatalog) -> bool {
+        let was_create = self.pending == Some(AutomationPending::Create);
         self.pending = None;
         self.loading = false;
         let created = self.editor.is_none();
@@ -261,17 +372,53 @@ impl AutomationPage {
             return false;
         }
         self.error = None;
+        let draft_id = self.create_draft.id.clone();
+        let draft_name = self.create_draft.name.clone();
+        let draft_instruction = self.create_draft.instruction.clone();
+        let landed = was_create
+            && self.editor.as_ref().is_some_and(|editor| {
+                editor.saved().automations.iter().any(|item| {
+                    item.id == draft_id
+                        && item.name == draft_name
+                        && item.instruction == draft_instruction
+                })
+            });
+        let saved_empty = self
+            .editor
+            .as_ref()
+            .is_some_and(|editor| editor.saved().automations.is_empty());
+        let was_creating = self.creating;
+        if landed {
+            self.creating = false;
+            self.selected = Some(draft_id);
+            self.create_draft = AutomationCreateDraft::default();
+        } else if was_create || saved_empty {
+            self.creating = true;
+        } else if self.creating && !self.create_draft.blank() {
+            self.creating = true;
+        } else {
+            self.creating = false;
+        }
         let selection_changed = self.ensure_selection();
         let draft_after = self
             .editor
             .as_ref()
             .and_then(|editor| editor.draft().map(|draft| draft.id.clone()));
         let cleared = draft_before.is_some() && draft_after.is_none();
-        if selection_changed || created || cleared {
+        let mode_changed = was_creating != self.creating;
+        if self.creating && (mode_changed || created) {
+            self.queue_create_fill();
+        } else if !self.creating
+            && (landed || mode_changed || selection_changed || created || cleared)
+        {
             if self.selected.is_some() {
                 self.queue_fill();
             } else {
-                self.fill = Some((String::new(), String::new()));
+                self.fill = Some(AutomationInputFill {
+                    id: None,
+                    name: String::new(),
+                    instruction: String::new(),
+                });
             }
         }
         true
@@ -314,7 +461,19 @@ impl AutomationPage {
         else {
             return;
         };
-        self.fill = Some((name.to_string(), instruction.to_string()));
+        self.fill = Some(AutomationInputFill {
+            id: None,
+            name: name.to_string(),
+            instruction: instruction.to_string(),
+        });
+    }
+
+    fn queue_create_fill(&mut self) {
+        self.fill = Some(AutomationInputFill {
+            id: Some(self.create_draft.id.clone()),
+            name: self.create_draft.name.clone(),
+            instruction: self.create_draft.instruction.clone(),
+        });
     }
 
     fn rows(&self) -> Vec<AutomationRow> {
@@ -378,6 +537,22 @@ mod tests {
         HostEvent::message("automation_settings_error", None, "error.automation")
     }
 
+    fn stored_fill(name: &str, instruction: &str) -> AutomationInputFill {
+        AutomationInputFill {
+            id: None,
+            name: name.into(),
+            instruction: instruction.into(),
+        }
+    }
+
+    fn create_fill(id: &str, name: &str, instruction: &str) -> AutomationInputFill {
+        AutomationInputFill {
+            id: Some(id.into()),
+            name: name.into(),
+            instruction: instruction.into(),
+        }
+    }
+
     #[test]
     fn page_shows_catalog_states_and_keeps_a_rejected_draft() {
         let mut page = AutomationPage::default();
@@ -397,7 +572,9 @@ mod tests {
         assert_eq!(empty.state, AutomationScreenState::Empty);
         assert!(empty.data.automations.is_empty());
         assert!(empty.rows.is_empty());
-        assert_eq!(page.take_input_fill(), Some((String::new(), String::new())));
+        assert!(empty.creating);
+        assert!(empty.can_create);
+        assert_eq!(page.take_input_fill(), Some(create_fill("", "", "")));
 
         page.receive(&catalog_event(sample(false)));
         let ready = page.screen(true);
@@ -410,9 +587,10 @@ mod tests {
         assert!(!ready.rows[0].paused);
         assert!(!ready.rows[0].draft);
         assert!(ready.actions_enabled);
+        assert!(!ready.creating);
         assert_eq!(
             page.take_input_fill(),
-            Some(("Nightly summary".into(), "Summarize ROADMAP".into()))
+            Some(stored_fill("Nightly summary", "Summarize ROADMAP"))
         );
         assert!(page.select("missing").is_none());
 
@@ -477,9 +655,9 @@ mod tests {
         assert_eq!(saved.data, stored);
         assert_eq!(
             page.take_input_fill(),
-            Some((
-                "Morning summary".into(),
-                "Summarize overnight changes".into()
+            Some(stored_fill(
+                "Morning summary",
+                "Summarize overnight changes"
             ))
         );
 
@@ -490,14 +668,13 @@ mod tests {
         assert_eq!(disabled.rows[0].name, "Morning summary");
         assert!(page.pause(false).is_none());
         assert!(page.resume(false).is_none());
-        assert!(
-            page.update(
+        assert!(page
+            .update(
                 false,
                 "Morning summary".into(),
                 "Summarize overnight changes".into(),
             )
-            .is_none()
-        );
+            .is_none());
         assert_eq!(page.screen(false).data, stored);
 
         let mut failed = AutomationPage::default();
@@ -534,5 +711,172 @@ mod tests {
         assert!(kept_screen.rows[0].draft);
         assert!(!kept_screen.rows[0].paused);
         assert!(kept.take_input_fill().is_none());
+    }
+
+    #[test]
+    fn page_creates_an_automation_and_keeps_a_rejected_draft() {
+        let mut page = AutomationPage::default();
+        assert!(!page.begin_create());
+        assert!(page
+            .create(
+                true,
+                "weekly".into(),
+                "Weekly digest".into(),
+                "Summarize the week".into(),
+            )
+            .is_none());
+
+        page.receive(&catalog_event(AutomationCatalog::default()));
+        let opened = page.screen(true);
+        assert_eq!(opened.state, AutomationScreenState::Empty);
+        assert!(opened.creating);
+        assert!(page.creating());
+        assert_eq!(opened.create.unwrap(), AutomationCreateDraft::default());
+        assert_eq!(page.take_input_fill(), Some(create_fill("", "", "")));
+
+        assert!(page.note_create("weekly", "Weekly digest", "Summarize the week"));
+        assert!(page
+            .create(
+                false,
+                "weekly".into(),
+                "Weekly digest".into(),
+                "Summarize the week".into(),
+            )
+            .is_none());
+        let disconnected = page.screen(false);
+        assert_eq!(disconnected.state, AutomationScreenState::Disabled);
+        assert!(!disconnected.can_create);
+        assert_eq!(
+            disconnected.create.as_ref().unwrap().instruction,
+            "Summarize the week"
+        );
+        assert!(page.take_input_fill().is_none());
+
+        let rejected_command = page
+            .create(
+                true,
+                "weekly".into(),
+                " ".into(),
+                "Summarize the week".into(),
+            )
+            .unwrap();
+        assert_eq!(rejected_command["method"], "settings.automation.create");
+        assert_eq!(rejected_command["id"], "weekly");
+        assert_eq!(rejected_command["name"], " ");
+        assert_eq!(rejected_command["instruction"], "Summarize the week");
+        assert_eq!(page.screen(true).pending, Some(AutomationPending::Create));
+        assert!(!page.screen(true).can_create);
+        page.receive(&error_event());
+        let rejected = page.screen(true);
+        assert_eq!(rejected.state, AutomationScreenState::Error);
+        assert!(rejected.creating);
+        assert!(rejected.data.automations.is_empty());
+        assert_eq!(rejected.error.as_deref(), Some("error.automation"));
+        let draft = rejected.create.unwrap();
+        assert_eq!(draft.id, "weekly");
+        assert_eq!(draft.name, " ");
+        assert_eq!(draft.instruction, "Summarize the week");
+        assert!(rejected.can_create);
+        assert!(page.take_input_fill().is_none());
+
+        let created_command = page
+            .create(
+                true,
+                "weekly".into(),
+                "Weekly digest".into(),
+                "Summarize the week".into(),
+            )
+            .unwrap();
+        assert_eq!(created_command["name"], "Weekly digest");
+        let created = AutomationCatalog {
+            automations: vec![AutomationConfig {
+                id: "weekly".into(),
+                name: "Weekly digest".into(),
+                instruction: "Summarize the week".into(),
+                paused: false,
+            }],
+        };
+        page.receive(&catalog_event(created.clone()));
+        let ready = page.screen(true);
+        assert_eq!(ready.state, AutomationScreenState::Ready);
+        assert!(!ready.creating);
+        assert!(!page.creating());
+        assert!(ready.create.is_none());
+        assert!(ready.error.is_none());
+        assert_eq!(ready.data, created);
+        assert_eq!(ready.selected.as_deref(), Some("weekly"));
+        assert_eq!(ready.rows[0].name, "Weekly digest");
+        assert!(!ready.rows[0].draft);
+        assert!(!ready.rows[0].paused);
+        assert_eq!(
+            page.take_input_fill(),
+            Some(stored_fill("Weekly digest", "Summarize the week"))
+        );
+
+        assert!(page.begin_create());
+        assert_eq!(page.take_input_fill(), Some(create_fill("", "", "")));
+        let duplicate = page
+            .create(
+                true,
+                "weekly".into(),
+                "Other".into(),
+                "Should not replace".into(),
+            )
+            .unwrap();
+        assert_eq!(duplicate["id"], "weekly");
+        page.receive(&error_event());
+        let kept = page.screen(true);
+        assert_eq!(kept.state, AutomationScreenState::Error);
+        assert!(kept.creating);
+        assert_eq!(kept.data, created);
+        assert_eq!(kept.rows[0].name, "Weekly digest");
+        assert_eq!(kept.create.as_ref().unwrap().name, "Other");
+        assert_eq!(
+            kept.create.as_ref().unwrap().instruction,
+            "Should not replace"
+        );
+        assert!(page.take_input_fill().is_none());
+
+        assert_eq!(
+            page.select("weekly"),
+            Some(("Weekly digest".into(), "Summarize the week".into()))
+        );
+        let editing = page.screen(true);
+        assert!(!editing.creating);
+        assert_eq!(editing.selected.as_deref(), Some("weekly"));
+
+        assert!(page.begin_create());
+        let _ = page.take_input_fill();
+        let second = page
+            .create(
+                true,
+                "morning".into(),
+                "Morning note".into(),
+                "List overnight changes".into(),
+            )
+            .unwrap();
+        assert_eq!(second["method"], "settings.automation.create");
+        let both = AutomationCatalog {
+            automations: vec![
+                created.automations[0].clone(),
+                AutomationConfig {
+                    id: "morning".into(),
+                    name: "Morning note".into(),
+                    instruction: "List overnight changes".into(),
+                    paused: false,
+                },
+            ],
+        };
+        page.receive(&catalog_event(both.clone()));
+        let refreshed = page.screen(true);
+        assert_eq!(refreshed.state, AutomationScreenState::Ready);
+        assert!(!refreshed.creating);
+        assert_eq!(refreshed.data, both);
+        assert_eq!(refreshed.selected.as_deref(), Some("morning"));
+        assert_eq!(refreshed.rows.len(), 2);
+        assert_eq!(
+            page.take_input_fill(),
+            Some(stored_fill("Morning note", "List overnight changes"))
+        );
     }
 }

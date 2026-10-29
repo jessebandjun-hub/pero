@@ -292,6 +292,10 @@ impl Render for Workbench {
             self.input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
             });
+            let placeholder = self.t("settings.automations_id");
+            self.automation_id.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
             let placeholder = self.t("settings.automations_name");
             self.automation_name.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
