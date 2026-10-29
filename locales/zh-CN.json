@@ -423,6 +423,7 @@
   "settings.appearance": "外观",
   "settings.all": "全部设置…",
   "error.preferences": "无法保存偏好，请检查本机运行时后重试。",
+  "error.session_history": "无法将会话历史迁入用户数据目录。原有会话记录已保留。",
   "project.sources": "资料与来源",
   "project.execution": "执行环境",
   "project.expand": "展开",

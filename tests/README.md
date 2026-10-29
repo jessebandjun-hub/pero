@@ -11,7 +11,7 @@
 | 各 crate 的 `#[cfg(test)]`，以及 `crates/pero-worker/tests/remote.rs` | L0 | `npm test` | `pero-contracts`、`pero-runtime`、`pero-host`、`pero-ui`、`pero-worker`：Unicode echo、语言偏好、流式队列、工具行折叠、Worker 租约与假协调服务 |
 | `runtime/acp_lifecycle.rs` | L0 | `npm test` | ACP 会话状态机。由 `crates/pero-runtime/src/acp/session.rs` 以 `#[path]` 编入，不经过 UI |
 | `runtime/lifecycle-agent.mjs` | L0 | 同上 | 状态机专用 fixture。场景由 `PERO_FIXTURE_SCENARIO` 选择，不读仓库、不发网络 |
-| `contracts/host.mjs` | L0 | `npm run test:contracts` | 真实 `pero-host --stdio` 的每一行 JSONL 符合 `protocol/generated/host.schema.json` |
+| `contracts/host.mjs` | L0 | `npm run test:contracts` | 真实 `pero-host --stdio` 的每一行 JSONL 符合 `protocol/generated/host.schema.json`；开发目录 `target/sessions.jsonl` 迁入用户数据目录后，重启仍读取相同会话，失败时原文件仍可读 |
 | `fixtures/acp-agent.mjs` | L0 / L1 | contracts 与 e2e 共用 | 脚本化 ACP：`toolmatrix`、权限、等待、长流式。普通展示场景不执行命令或文件写入；显式 `contribution-fixture` 场景在临时贡献工作区写入文档 |
 | `e2e/desktop.mjs` | L1 | `npm run test:e2e` | 顺序执行 `workbench.mjs` 和 `toolcalls.mjs`，各启动一次真实 Electron |
 | `e2e/workbench.mjs` | L1 | 同上 | 中文组字、多轮、取消、权限、千段长流式、上滚不跳动、刷新后历史还在 |

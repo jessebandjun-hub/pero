@@ -2,7 +2,7 @@
 // line in both directions against protocol/generated/host.schema.json.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -207,6 +207,12 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
+try {
+  await checkSessionDataDirectory();
+} catch (error) {
+  failures.push(`session data directory: ${error}`);
+}
+
 const declared = [...eventVariants.keys()];
 const undeclared = [...seen].filter((kind) => !kind.startsWith('replay:') && !declared.includes(kind));
 const unexercised = declared.filter((kind) => !seen.has(kind));
@@ -218,3 +224,128 @@ if (failures.length) {
   process.exit(1);
 }
 console.log('Host protocol conformance passed.');
+
+function journalRecords(file) {
+  return readFileSync(file, 'utf8').split('\n').filter((line) => line.length > 0).map((line) => JSON.parse(line));
+}
+function sessionIds(records) {
+  return records.filter((record) => record.kind === 'session_created').map((record) => record.thread_id).sort();
+}
+function launchHost(cwd, env) {
+  const child = spawn(resolve(root, 'target/debug/pero-host'), ['--stdio'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const events = [];
+  let waiters = [];
+  createInterface({ input: child.stdout }).on('line', (line) => {
+    let event;
+    try { event = JSON.parse(line); } catch { failures.push(`session data directory: non-JSON event: ${line}`); return; }
+    seen.add(event.kind);
+    if (eventVariants.has(event.kind) && !validEvent(event)) failures.push(`session data directory: event ${explain(eventVariants.get(event.kind), event)}`);
+    events.push(event);
+    waiters = waiters.filter((waiter) => !waiter(event));
+  });
+  const waitFor = (kind, timeout = 10000) => new Promise((resolveEvent, reject) => {
+    const found = events.find((event) => event.kind === kind && !event.taken);
+    if (found) { found.taken = true; return resolveEvent(found); }
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${kind}; stderr=${stderr}`)), timeout);
+    waiters.push((event) => {
+      if (event.kind !== kind) return false;
+      event.taken = true; clearTimeout(timer); resolveEvent(event); return true;
+    });
+  });
+  return {
+    events: () => events,
+    send: (input) => child.stdin.write(`${JSON.stringify(input)}\n`),
+    waitFor,
+    stop: () => new Promise((done) => { child.once('exit', done); child.stdin.end(); }),
+    stderr: () => stderr,
+  };
+}
+async function checkSessionDataDirectory() {
+  const workspace = mkdtempSync(`${tmpdir()}/pero-session-dir-`);
+  try {
+    const legacy = resolve(workspace, 'target/sessions.jsonl');
+    const destination = resolve(workspace, 'user-data/sessions.jsonl');
+    mkdirSync(resolve(workspace, 'target'), { recursive: true });
+    const event = (kind, thread, text, data) => ({ version: 1, kind, request_id: null, text, thread_id: thread, ...(data ? { data } : {}) });
+    const records = [
+      event('session_created', 'migrate-alpha', '', { agent: 'fixture', workspace }),
+      event('user_message', 'migrate-alpha', '迁移前的内容'),
+      event('turn_finished', 'migrate-alpha', '', { stopReason: 'end_turn' }),
+      event('session_created', 'migrate-beta', '', { agent: 'fixture', workspace }),
+      event('user_message', 'migrate-beta', '第二条会话'),
+    ];
+    const legacyText = `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+    writeFileSync(legacy, legacyText);
+    const agents = resolve(workspace, 'agents.json');
+    writeFileSync(agents, '[]');
+    const env = {
+      ...process.env,
+      PERO_LOCALE: 'en',
+      PERO_AGENT_ROOT: workspace,
+      PERO_SETTINGS_PATH: resolve(workspace, 'user-data/settings.json'),
+      PERO_HISTORY_PATH: destination,
+      PERO_AGENTS_FILE: agents,
+    };
+    const replayOf = async (host) => {
+      await host.waitFor('settings');
+      await host.waitFor('ready');
+      if (host.events().some((item) => item.message_key === 'error.session_history')) throw new Error(`migration reported an error: ${host.stderr()}`);
+      host.send({ action: 'list_agents' });
+      return host.waitFor('replay');
+    };
+    let host = launchHost(workspace, env);
+    const first = await replayOf(host);
+    await host.stop();
+    if (readFileSync(legacy, 'utf8') !== legacyText) throw new Error('development journal changed during migration');
+    const migrated = journalRecords(destination);
+    if (!isDeepStrictEqual(sessionIds(migrated), ['migrate-alpha', 'migrate-beta'])) throw new Error(`migrated session ids ${sessionIds(migrated)}`);
+    if (!isDeepStrictEqual(migrated, records)) throw new Error('migrated journal content differs from the development journal');
+    if (!isDeepStrictEqual(first.data.events, records)) throw new Error('first replay does not match the migrated journal');
+    const continued = event('user_message', 'migrate-alpha', '重启后继续读取');
+    appendFileSync(destination, `${JSON.stringify(continued)}\n`);
+    host = launchHost(workspace, env);
+    const second = await replayOf(host);
+    await host.stop();
+    const restarted = journalRecords(destination);
+    if (!isDeepStrictEqual(sessionIds(restarted), sessionIds(records))) throw new Error('restart changed the session count');
+    if (!isDeepStrictEqual(restarted, [...records, continued])) throw new Error('restart did not read the user data journal');
+    if (!isDeepStrictEqual(second.data.events, restarted)) throw new Error('restart replay does not match the user data journal');
+    if (readFileSync(legacy, 'utf8') !== legacyText) throw new Error('development journal changed after restart');
+    if (readFileSync(legacy, 'utf8').includes('重启后继续读取')) throw new Error('continued record was written back to the development journal');
+
+    const broken = mkdtempSync(`${tmpdir()}/pero-session-fail-`);
+    try {
+      const brokenLegacy = resolve(broken, 'target/sessions.jsonl');
+      mkdirSync(resolve(broken, 'target'), { recursive: true });
+      writeFileSync(brokenLegacy, legacyText);
+      const blocked = resolve(broken, 'blocked');
+      writeFileSync(blocked, 'not a directory');
+      const brokenEnv = { ...env, PERO_AGENT_ROOT: broken, PERO_SETTINGS_PATH: resolve(broken, 'settings.json'), PERO_HISTORY_PATH: resolve(blocked, 'sessions.jsonl'), PERO_AGENTS_FILE: agents };
+      host = launchHost(broken, brokenEnv);
+      const failure = await host.waitFor('error');
+      await host.waitFor('ready');
+      if (failure.message_key !== 'error.session_history' || !failure.text) throw new Error(`expected a session history error, got ${JSON.stringify(failure)}`);
+      host.send({ action: 'list_agents' });
+      const readable = await host.waitFor('replay');
+      await host.stop();
+      if (!isDeepStrictEqual(readable.data.events, records)) throw new Error('failed migration did not keep the development journal readable');
+      if (readFileSync(brokenLegacy, 'utf8') !== legacyText) throw new Error('failed migration changed the development journal');
+      if (statSync(blocked).isDirectory()) throw new Error('failed migration replaced the blocked parent');
+      host = launchHost(broken, brokenEnv);
+      const again = await host.waitFor('error');
+      await host.waitFor('ready');
+      host.send({ action: 'list_agents' });
+      const still = await host.waitFor('replay');
+      await host.stop();
+      if (again.message_key !== 'error.session_history') throw new Error('restart hid the migration error');
+      if (!isDeepStrictEqual(still.data.events, records)) throw new Error('restart after a failed migration lost the previous journal');
+      if (readFileSync(brokenLegacy, 'utf8') !== legacyText) throw new Error('restart after a failed migration changed the development journal');
+    } finally {
+      rmSync(broken, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
