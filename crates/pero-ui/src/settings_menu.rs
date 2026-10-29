@@ -167,11 +167,7 @@ impl Workbench {
                 let target = workbench.clone();
                 menu.separator()
                     .item(PopupMenuItem::new(all.clone()).on_click(move |_, _, cx| {
-                        let _ = target.update(cx, |this, cx| {
-                            this.navigation = 10;
-                            this.sync_follow(cx);
-                            cx.notify();
-                        });
+                        let _ = target.update(cx, |this, cx| this.open_general_settings(cx));
                     }))
             })
             .on_open_change(move |open, _, cx| {
@@ -185,8 +181,11 @@ impl Workbench {
     pub(crate) fn general_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palettes.get(self.dark);
         div()
+            .id("general-settings")
             .flex_1()
+            .min_h_0()
             .min_w_0()
+            .overflow_y_scroll()
             .p(px(24.))
             .flex()
             .flex_col()
@@ -266,5 +265,6 @@ impl Workbench {
                     ),
                 ),
             )
+            .child(self.model_section(cx))
     }
 }

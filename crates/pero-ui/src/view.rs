@@ -292,8 +292,21 @@ impl Render for Workbench {
             self.input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
             });
+            let placeholder = self.t("settings.model_provider");
+            self.model_provider.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
+            let placeholder = self.t("settings.model_name");
+            self.model_name.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
+            let placeholder = self.t("settings.model_preset");
+            self.model_preset.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
         }
         self.apply_local_execution(window, cx);
+        self.apply_model_inputs(window, cx);
         let width: f32 = window.viewport_size().width.into();
         let height: f32 = window.viewport_size().height.into();
         let compact = width < 1150.;

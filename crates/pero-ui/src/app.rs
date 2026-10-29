@@ -38,6 +38,10 @@ pub(crate) struct Workbench {
     pub system_dark: bool,
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
+    pub(crate) model: crate::model_page::ModelPage,
+    pub(crate) model_provider: Entity<InputState>,
+    pub(crate) model_name: Entity<InputState>,
+    pub(crate) model_preset: Entity<InputState>,
     pub settings_menu_open: bool,
     pub recent_tasks: Vec<String>,
     pub selected_project: Option<String>,
@@ -143,6 +147,28 @@ impl Workbench {
             }
             cx.notify();
         }));
+        let model_provider = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(pero_contracts::i18n::text(
+                &locale,
+                "settings.model_provider",
+            ))
+        });
+        let model_name = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(pero_contracts::i18n::text(&locale, "settings.model_name"))
+        });
+        let model_preset = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(pero_contracts::i18n::text(&locale, "settings.model_preset"))
+        });
+        for input in [&model_provider, &model_name, &model_preset] {
+            subscriptions.push(cx.subscribe(input, |this, _, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.note_model_typing(cx);
+                }
+                cx.notify();
+            }));
+        }
         let remote = crate::remote::RemoteState::new(window, cx);
         let local_execution = crate::local_execution::LocalExecution::new(&locale, window, cx);
         Self {
@@ -159,6 +185,10 @@ impl Workbench {
             system_dark: dark,
             preferences: Default::default(),
             preferences_status: Default::default(),
+            model: Default::default(),
+            model_provider,
+            model_name,
+            model_preset,
             settings_menu_open: false,
             recent_tasks: Vec::new(),
             selected_project: None,
@@ -248,6 +278,7 @@ impl Workbench {
         if self.receive_chat(&event, cx) {
             return;
         }
+        self.model.receive(&event);
         match event.kind.as_str() {
             "workbench_settings" => {
                 if let Ok(preferences) = serde_json::from_value::<
@@ -264,11 +295,26 @@ impl Workbench {
                     self.error = None;
                 }
             }
+            "model_settings" => {
+                if self.model.screen(self.connected).error.is_none()
+                    && matches!(
+                        self.error.as_deref(),
+                        Some("error.preferences" | "error.connection" | "error.agent_browser")
+                    )
+                {
+                    self.error = None;
+                }
+            }
             "settings" => {
                 self.locale = pero_contracts::i18n::normalize(&event.text).into();
                 gpui_kit::component::set_locale(&self.locale);
             }
-            "ready" => self.connected = true,
+            "ready" => {
+                self.connected = true;
+                if self.navigation == 10 {
+                    self.request_model_settings(!self.model.uncommitted(), cx);
+                }
+            }
             "disconnected" => {
                 self.connected = false;
                 self.pending = None;
@@ -452,6 +498,8 @@ pub fn snapshot() -> String {
             "renderedBytes":ui.chats.iter().map(|c|c.messages.iter().map(|m|m.view.read(cx).rendered_bytes(cx)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         });
         value["preferencesStatus"] = serde_json::json!(ui.preferences_status);
+        value["modelSettings"] =
+            serde_json::to_value(ui.model.screen(ui.connected)).unwrap_or(serde_json::Value::Null);
         value["projectBinding"] = serde_json::json!(ui.project_binding.read(cx).value().as_ref());
         value["sidebarSearch"] = serde_json::json!(ui.search.read(cx).value().as_ref());
         value["deletingChat"] = serde_json::json!(ui.deleting_chat);

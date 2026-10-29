@@ -23,6 +23,11 @@ mod composer;
 mod cloud;
 #[cfg(any(target_family = "wasm", feature = "native"))]
 mod local_roadmap;
+#[cfg_attr(not(any(target_family = "wasm", feature = "native")), allow(dead_code))]
+#[cfg(any(target_family = "wasm", feature = "native", test))]
+mod model_page;
+#[cfg(any(target_family = "wasm", feature = "native"))]
+mod model_settings_view;
 #[cfg(any(target_family = "wasm", feature = "native"))]
 mod project_view;
 #[cfg_attr(not(any(target_family = "wasm", feature = "native")), allow(dead_code))]
