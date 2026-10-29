@@ -5,10 +5,31 @@ date: 2026-10-29
 
 # Plugin settings
 
-ROADMAP item 「插件设置页」 stays unchecked. This slice is the Host catalog
-the Desktop page will list and toggle. It is L0 evidence on top of `master`
-`604cca1`. It does not mark the item complete. 「插件管理」 (install, update,
-and remove) stays a later slice.
+ROADMAP item 「插件设置页」 stays unchecked. The Host catalog is
+`cursor/plugin-settings-host-b461` (`81e5850`). This slice wires Desktop All
+settings to that catalog. It does not mark the item complete. 「插件管理」
+(install, update, and remove) stays a later slice.
+
+No Electron session was run. Empty, loading, error, and disabled states were
+not observed in a running workbench, so they cannot check the roadmap item.
+
+## Desktop page
+
+All settings sends `settings.plugins.get` and lists each plugin's name,
+version, and enabled flag from `PluginSettings`. Enable and disable send
+`settings.plugins.enable` and `settings.plugins.disable`. A row changes only
+when `plugin_settings` carries a valid catalog and `show_effective` accepts it.
+
+`plugin_settings_error` is shown with `error.plugins`. That event is not a
+successful save: the page does not call `show_effective` for it, the previous
+rows stay, and the same enable or disable can be sent again. A failed first
+load does not present an empty catalog as installed. The page snapshot has no
+saved or success flag.
+
+The Electron session allowlist includes the three methods next to the other
+settings methods. A rejected Desktop command is delivered as
+`plugin_settings_error`, so the page keeps its rows. Package install, update,
+and remove are not on this page.
 
 ## Stored catalog
 
@@ -39,7 +60,10 @@ Success event: `plugin_settings`, `data` is the stored catalog (`name`,
 
 ## Verification
 
-Rust 1.99.1. The workspace uses edition 2024.
+Rust 1.99.1 for the page test. The workspace uses edition 2024. Wasm check used
+nightly-2026-10-28 and gpui-kit `ec89cfc`.
+
+Host evidence from `81e5850`, not re-run in this slice:
 
 - `cargo test -p pero-contracts -p pero-runtime --lib plugin` passed:
   enable and disable return the stored catalog and keep version; rejected
@@ -55,17 +79,29 @@ Rust 1.99.1. The workspace uses edition 2024.
   The suite observed 34 of 49 declared event kinds; `plugin_settings` and
   `plugin_settings_error` were among the observed kinds.
 - `node scripts/codegen/contracts.mjs --check` passed.
-- `node scripts/check/locales.mjs` checked 524 bilingual messages.
+
+This slice:
+
+- `cargo +stable test -p pero-ui --lib host_rejection` passed. A rejected
+  event, including one that carries a different catalog, leaves the listed
+  name, version, and enabled flag in place and records `error.plugins`.
+  The same disable can be sent again. An invalid catalog does not replace
+  the list. A later valid catalog does, and the notice is cleared. The
+  snapshot has no saved flag.
+- `node scripts/check/locales.mjs` checked 533 bilingual messages.
+- `npx tsc --noEmit` passed.
+- `PERO_GPUI_KIT_PATH` set to gpui-kit `ec89cfc`, then
+  `node scripts/cargo.mjs +nightly-2026-10-28 check --locked -p pero-ui --target wasm32-unknown-unknown`
+  passed. The settings view typechecked with the Wasm Desktop crate.
 
 ## Open follow-ups
 
-- Desktop settings page that lists each plugin's name, version, and enabled
-  flag from `plugin_settings.data` through `PluginSettings`.
-- Send enable and disable, then render the returned catalog. On
-  `plugin_settings_error`, keep the previous list and leave the control
-  available to retry.
-- Empty, loading, error, and disabled states in the running workbench, plus
-  an Electron session. That evidence is what can check 「插件设置页」.
+- An Electron session that opens All settings, lists a seeded catalog, disables
+  and enables a plugin, and shows `plugin_settings_error` while the previous
+  rows stay and the control can be used again. That running-workbench evidence
+  is what can check 「插件设置页」.
+- Empty, loading, error, and disabled states in that session. The page draws
+  them, and this record does not claim they were seen.
 - 「插件管理」 still owes install, update, and remove. Until a package update
   writes a new version into this catalog, the page has no Host update to
   reflect. After that write, `settings.plugins.get` is the list the page shows.

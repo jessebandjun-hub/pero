@@ -51,14 +51,21 @@ try {
   };
   window.peroSessionCommand = (json) => {
     const command = JSON.parse(json);
+    const pluginMethod = typeof command.method === 'string' && command.method.startsWith('settings.plugins.');
+    // A rejected plugin change is not a stored catalog. The page keeps its rows.
+    const pluginFailure = () => onEvent({version:1,kind:'plugin_settings_error',request_id:null,text:'',message_key:'error.plugins'});
     if (!window.pero && command.method === 'settings.workbench') {
       // Browser preview keeps appearance in memory; Desktop persists via Host.
       queueMicrotask(() => onEvent({version:1,kind:'workbench_settings',request_id:null,text:'',data:command.preferences}));
       return;
     }
+    if (!window.pero && pluginMethod) { queueMicrotask(pluginFailure); return; }
     if (!window.pero) { queueMicrotask(() => onEvent({version:1,kind:'error',request_id:null,text:'',message_key:'error.agent_browser'})); return; }
     const pending = typeof command.action === 'string' && command.action.startsWith('apps_') ? window.pero.appsCommand(command) : typeof command.action === 'string' && command.action.startsWith('remote_') ? window.pero.remoteCommand(command) : command.action === 'choose_workspace' ? window.pero.chooseWorkspace() : command.action === 'choose_context' ? window.pero.chooseContext(command.kind ? command : undefined) : window.pero.sessionCommand(command);
-    pending.catch(() => onEvent({version:1,kind:command.action === 'search_context' || command.action === 'resolve_context' || command.action === 'choose_context' && command.kind ? 'context_error' : command.thread_id?'session_error':'error',thread_id:command.thread_id,request_id:command.request_id ?? null,text:t('error.connection')}));
+    pending.catch(() => {
+      if (pluginMethod) { pluginFailure(); return; }
+      onEvent({version:1,kind:command.action === 'search_context' || command.action === 'resolve_context' || command.action === 'choose_context' && command.kind ? 'context_error' : command.thread_id?'session_error':'error',thread_id:command.thread_id,request_id:command.request_id ?? null,text:t('error.connection')});
+    });
   };
   run(JSON.stringify(themes), dark, locale);
   function applyPalette(isDark: boolean) {
