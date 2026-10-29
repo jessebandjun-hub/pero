@@ -1458,6 +1458,108 @@
       ],
       "additionalProperties": false
     },
+    "CredentialId": {
+      "title": "CredentialId",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "Stable credential slot id. The secret envelope is not part of the id."
+    },
+    "CredentialSecret": {
+      "title": "CredentialSecret",
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 4096,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "description": "Opaque secret envelope. Host events must not carry this value."
+    },
+    "CredentialSettingsEvent": {
+      "title": "CredentialSettingsEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "credential_settings"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/CredentialSettingsView"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text",
+        "data"
+      ],
+      "additionalProperties": false,
+      "description": "Saved credential connection status. The payload has no secret envelope."
+    },
+    "CredentialSettingsView": {
+      "title": "CredentialSettingsView",
+      "type": "object",
+      "properties": {
+        "credentials": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialView"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "credentials"
+      ],
+      "additionalProperties": false
+    },
+    "CredentialView": {
+      "title": "CredentialView",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CredentialId"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "configured": {
+          "type": "boolean",
+          "const": true
+        },
+        "status": {
+          "type": "string",
+          "const": "configured"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "configured",
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "Public credential slot. Connection status is `configured` when an envelope is stored."
+    },
     "DeleteCommand": {
       "title": "DeleteCommand",
       "type": "object",
@@ -1690,6 +1792,20 @@
       ],
       "additionalProperties": false
     },
+    "GetCredentialSettingsRequest": {
+      "title": "GetCredentialSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.credentials.get"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
     "GetWorkbenchSettingsRequest": {
       "title": "GetWorkbenchSettingsRequest",
       "type": "object",
@@ -1777,6 +1893,9 @@
         },
         {
           "$ref": "#/$defs/WorkbenchSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/CredentialSettingsEvent"
         },
         {
           "$ref": "#/$defs/RemoteSettingsSavedEvent"
@@ -1893,6 +2012,15 @@
         },
         {
           "$ref": "#/$defs/SetWorkbenchSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/GetCredentialSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/ReplaceCredentialRequest"
+        },
+        {
+          "$ref": "#/$defs/RemoveCredentialRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"
@@ -2938,6 +3066,62 @@
         "request_id",
         "text",
         "data"
+      ],
+      "additionalProperties": false
+    },
+    "RemoveCredentialRequest": {
+      "title": "RemoveCredentialRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.credentials"
+        },
+        "operation": {
+          "type": "string",
+          "const": "remove"
+        },
+        "id": {
+          "$ref": "#/$defs/CredentialId"
+        }
+      },
+      "required": [
+        "method",
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ReplaceCredentialRequest": {
+      "title": "ReplaceCredentialRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.credentials"
+        },
+        "operation": {
+          "type": "string",
+          "const": "replace"
+        },
+        "id": {
+          "$ref": "#/$defs/CredentialId"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "secret": {
+          "$ref": "#/$defs/CredentialSecret"
+        }
+      },
+      "required": [
+        "method",
+        "operation",
+        "id",
+        "label",
+        "secret"
       ],
       "additionalProperties": false
     },

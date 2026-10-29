@@ -50,6 +50,35 @@ model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
 
+/** Stable credential slot id. The secret envelope is not part of the id. */
+@minLength(1) @maxLength(64) @pattern("^[A-Za-z0-9][A-Za-z0-9._-]*$") scalar CredentialId extends string;
+/** Opaque secret envelope. Host events must not carry this value. */
+@minLength(4) @maxLength(4096) @pattern("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$") scalar CredentialSecret extends string;
+/** Public credential slot. Connection status is `configured` when an envelope is stored. */
+model CredentialView {
+  id: CredentialId;
+  @minLength(1) @maxLength(128) label: string;
+  configured: true;
+  status: "configured";
+  ...Closed;
+}
+model CredentialSettingsView { @maxItems(32) credentials: CredentialView[]; ...Closed }
+model GetCredentialSettingsRequest { method: "settings.credentials.get"; ...Closed }
+model ReplaceCredentialRequest {
+  method: "settings.credentials";
+  operation: "replace";
+  id: CredentialId;
+  @minLength(1) @maxLength(128) label: string;
+  secret: CredentialSecret;
+  ...Closed;
+}
+model RemoveCredentialRequest {
+  method: "settings.credentials";
+  operation: "remove";
+  id: CredentialId;
+  ...Closed;
+}
+
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
   @minLength(1) @maxLength(2048) url: string;
@@ -119,6 +148,9 @@ union HostInput {
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,
+  GetCredentialSettingsRequest,
+  ReplaceCredentialRequest,
+  RemoveCredentialRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -146,6 +178,8 @@ model ThreadEventBase {
 /** `text` is the active locale tag. */
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
+/** Saved credential connection status. The payload has no secret envelope. */
+model CredentialSettingsEvent { kind: "credential_settings"; ...EventBase; data: CredentialSettingsView }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }
 model RemoteSettingsErrorEvent { kind: "remote_settings_error"; ...EventBase }
@@ -264,6 +298,7 @@ union HostEvent {
   Pero.Contributions.ContributionErrorEvent,
   SettingsEvent,
   WorkbenchSettingsEvent,
+  CredentialSettingsEvent,
   RemoteSettingsSavedEvent,
   RemoteSettingsErrorEvent,
   ReadyEvent,

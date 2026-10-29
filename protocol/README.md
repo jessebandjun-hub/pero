@@ -13,6 +13,11 @@ session creation, prompt, cancel, explicit authentication, permission response,
 model selection and close. Electron's session IPC allowlist excludes direct
 file/workspace paths; those commands originate from native file dialogs.
 
+`settings.credentials.get` and `settings.credentials` read and update credential
+slots in the runtime settings file. `credential_settings` reports whether each
+slot is configured. It does not include the secret envelope. The Desktop
+renderer allowlist does not forward these methods.
+
 `session_update` carries ACP message/thought chunks, tool calls/updates and
 configuration updates. `permission` carries the ACP request plus a Host-issued
 `permission_id`; only advertised choices are accepted. Model selection is shown
