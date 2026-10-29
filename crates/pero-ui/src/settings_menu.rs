@@ -34,6 +34,20 @@ impl Workbench {
         );
     }
 
+    pub(crate) fn commit_sidebar_drag(&mut self, cx: &mut Context<Self>) {
+        let Some(sidebar) = self.sidebar_drag else {
+            return;
+        };
+        if sidebar == self.preferences.layout.sidebar {
+            self.sidebar_drag = None;
+            cx.notify();
+            return;
+        }
+        let mut next = self.preferences.clone();
+        next.layout.sidebar = sidebar;
+        self.save_preferences(next, cx);
+    }
+
     pub(crate) fn settings_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let workbench = cx.entity().downgrade();
         let menu_owner = workbench.clone();

@@ -46,7 +46,9 @@ model SetLocaleRequest {
 }
 
 model ProjectBinding { @minLength(1) @maxLength(4096) workspace: string; @maxLength(128) project_id: string; ...Closed }
-model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; ...Closed }
+/** Sidebar width in CSS pixels. The Host rejects values outside 200..=420. */
+model WorkbenchLayout { sidebar: uint32; ...Closed }
+model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; layout?: WorkbenchLayout; ...Closed }
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
 

@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use gpui_kit::{prelude::*, *};
+use pero_contracts::workbench::WorkbenchLayout;
 use serde_json::json;
 use std::rc::Rc;
 
@@ -268,6 +269,65 @@ impl Workbench {
             .collect();
         workspace::environments(self.ui(), &agents, self.workspace_actions(cx))
     }
+
+    fn sidebar_resize(&self, sidebar_width: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        let workbench = cx.entity().downgrade();
+        div()
+            .id("sidebar-resize")
+            .absolute()
+            .left(px(sidebar_width - 3.))
+            .top_0()
+            .h_full()
+            .w(px(6.))
+            .child(
+                canvas(
+                    |bounds, window, _cx| window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
+                    move |_bounds, hitbox, window, _cx| {
+                        window.set_cursor_style(CursorStyle::ResizeLeftRight, &hitbox);
+                        let down = workbench.clone();
+                        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                            if phase.bubble()
+                                && event.button == MouseButton::Left
+                                && hitbox.is_hovered(window)
+                            {
+                                let _ = down.update(cx, |this, cx| {
+                                    this.sidebar_drag = Some(
+                                        this.sidebar_drag
+                                            .unwrap_or(this.preferences.layout.sidebar),
+                                    );
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                });
+                            }
+                        });
+                        let drag = workbench.clone();
+                        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _window, cx| {
+                            if !phase.bubble() || !event.dragging() {
+                                return;
+                            }
+                            let _ = drag.update(cx, |this, cx| {
+                                if this.sidebar_drag.is_none() {
+                                    return;
+                                }
+                                let next =
+                                    WorkbenchLayout::clamp_sidebar(f32::from(event.position.x));
+                                if this.sidebar_drag != Some(next) {
+                                    this.sidebar_drag = Some(next);
+                                    cx.notify();
+                                }
+                            });
+                        });
+                        let up = workbench.clone();
+                        window.on_mouse_event(move |event: &MouseUpEvent, phase, _window, cx| {
+                            if phase.bubble() && event.button == MouseButton::Left {
+                                let _ = up.update(cx, |this, cx| this.commit_sidebar_drag(cx));
+                            }
+                        });
+                    },
+                )
+                .size_full(),
+            )
+    }
 }
 
 impl Render for Workbench {
@@ -296,18 +356,30 @@ impl Render for Workbench {
         self.apply_local_execution(window, cx);
         let width: f32 = window.viewport_size().width.into();
         let height: f32 = window.viewport_size().height.into();
-        let compact = width < 1150.;
+        let compact = width < WorkbenchLayout::COMPACT_VIEWPORT;
+        if compact {
+            self.sidebar_drag = None;
+        }
+        let sidebar_width = self
+            .sidebar_drag
+            .filter(|_| !compact)
+            .map(|px| px as f32)
+            .unwrap_or_else(|| self.preferences.layout.sidebar_px(width));
         self.follow_task_pages(window, cx);
-        self.sync_app_surface(if compact { 240. } else { 260. }, width, height);
+        self.sync_app_surface(sidebar_width, width, height);
         let p = self.palettes.get(self.dark);
         div()
             .size_full()
+            .relative()
             .flex()
             .bg(p.color("surface"))
             .text_color(p.color("text"))
             .font_family("Noto Sans CJK SC")
             .text_size(px(14.))
-            .child(self.sidebar(if compact { 240. } else { 260. }, cx))
+            .child(self.sidebar(sidebar_width, cx))
+            .when(!compact, |el| {
+                el.child(self.sidebar_resize(sidebar_width, cx))
+            })
             .child(
                 div()
                     .flex_1()

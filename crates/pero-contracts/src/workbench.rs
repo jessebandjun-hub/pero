@@ -34,6 +34,47 @@ pub struct ProjectBinding {
     pub project_id: String,
 }
 
+/// Sidebar width saved by the Host. Narrow windows keep a compact sidebar
+/// instead of applying this value, so a wide preference cannot cover the main column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkbenchLayout {
+    pub sidebar: u32,
+}
+
+impl Default for WorkbenchLayout {
+    fn default() -> Self {
+        Self {
+            sidebar: Self::SIDEBAR_DEFAULT,
+        }
+    }
+}
+
+impl WorkbenchLayout {
+    pub const SIDEBAR_DEFAULT: u32 = 260;
+    pub const SIDEBAR_MIN: u32 = 200;
+    pub const SIDEBAR_MAX: u32 = 420;
+    pub const COMPACT_VIEWPORT: f32 = 1150.;
+    pub const COMPACT_SIDEBAR: u32 = 240;
+
+    pub fn valid(self) -> bool {
+        (Self::SIDEBAR_MIN..=Self::SIDEBAR_MAX).contains(&self.sidebar)
+    }
+
+    pub fn clamp_sidebar(px: f32) -> u32 {
+        px.round()
+            .clamp(Self::SIDEBAR_MIN as f32, Self::SIDEBAR_MAX as f32) as u32
+    }
+
+    pub fn sidebar_px(self, viewport_width: f32) -> f32 {
+        if viewport_width < Self::COMPACT_VIEWPORT {
+            Self::COMPACT_SIDEBAR as f32
+        } else {
+            self.sidebar as f32
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkbenchPreferences {
@@ -41,11 +82,14 @@ pub struct WorkbenchPreferences {
     pub appearance: Appearance,
     #[serde(default)]
     pub projects: Vec<ProjectBinding>,
+    #[serde(default)]
+    pub layout: WorkbenchLayout,
 }
 
 impl WorkbenchPreferences {
     pub fn valid(&self) -> bool {
-        self.projects.len() <= 128
+        self.layout.valid()
+            && self.projects.len() <= 128
             && self.projects.iter().enumerate().all(|(i, binding)| {
                 !binding.workspace.trim().is_empty()
                     && binding.workspace.len() <= 4096
@@ -134,6 +178,35 @@ pub struct WorkspaceIdentity {
 pub struct WorkspaceRepository {
     pub workspace: String,
     pub repository: RepositoryIdentity,
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn saved_sidebar_applies_when_wide_and_stays_compact_when_narrow() {
+        let saved = WorkbenchLayout { sidebar: 320 };
+        for (viewport, width) in [(1586., 320.), (1150., 320.), (1149., 240.), (1000., 240.)] {
+            assert_eq!(saved.sidebar_px(viewport), width, "{viewport}");
+        }
+        for (sidebar, accepted) in [
+            (200, true),
+            (260, true),
+            (420, true),
+            (199, false),
+            (421, false),
+        ] {
+            assert_eq!(WorkbenchLayout { sidebar }.valid(), accepted, "{sidebar}");
+        }
+        for (px, sidebar) in [(10., 200), (900., 420), (320.4, 320), (199.6, 200)] {
+            assert_eq!(WorkbenchLayout::clamp_sidebar(px), sidebar, "{px}");
+        }
+        let parsed: WorkbenchPreferences =
+            serde_json::from_str(r#"{"appearance":"dark","projects":[]}"#).unwrap();
+        assert_eq!(parsed.layout, WorkbenchLayout::default());
+        assert!(parsed.valid());
+    }
 }
 
 #[cfg(test)]

@@ -63,16 +63,23 @@ pub fn save_locale(path: &Path, locale: &str) -> io::Result<()> {
 }
 
 pub fn load_workbench(path: &Path) -> pero_contracts::workbench::WorkbenchPreferences {
-    std::fs::read(path).ok()
+    std::fs::read(path)
+        .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|value| serde_json::from_value(value["workbench"].clone()).ok())
         .filter(pero_contracts::workbench::WorkbenchPreferences::valid)
         .unwrap_or_default()
 }
 
-pub fn save_workbench(path: &Path, preferences: &pero_contracts::workbench::WorkbenchPreferences) -> io::Result<()> {
+pub fn save_workbench(
+    path: &Path,
+    preferences: &pero_contracts::workbench::WorkbenchPreferences,
+) -> io::Result<()> {
     if !preferences.valid() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid workbench preferences"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid workbench preferences",
+        ));
     }
     let preferences = serde_json::to_value(preferences)?;
     update(path, |value| value["workbench"] = preferences)
@@ -116,11 +123,24 @@ mod tests {
         let preferences = pero_contracts::workbench::WorkbenchPreferences {
             appearance: pero_contracts::workbench::Appearance::Dark,
             projects: vec![pero_contracts::workbench::ProjectBinding {
-                workspace: "/work/pero".into(), project_id: "pero".into(),
+                workspace: "/work/pero".into(),
+                project_id: "pero".into(),
             }],
+            layout: pero_contracts::workbench::WorkbenchLayout { sidebar: 320 },
         };
         save_workbench(&path, &preferences).unwrap();
         assert_eq!(load_workbench(&path), preferences);
+        let mut invalid = preferences.clone();
+        invalid.layout.sidebar = 10;
+        assert!(save_workbench(&path, &invalid).is_err());
+        assert_eq!(load_workbench(&path), preferences);
+        let without_layout = serde_json::json!({"appearance":"light","projects":[]});
+        let loaded: pero_contracts::workbench::WorkbenchPreferences =
+            serde_json::from_value(without_layout).unwrap();
+        assert_eq!(
+            loaded.layout.sidebar,
+            pero_contracts::workbench::WorkbenchLayout::SIDEBAR_DEFAULT
+        );
         save_locale(&path, "en").unwrap();
         let value: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
