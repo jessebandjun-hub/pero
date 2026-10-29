@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "files": ["payload.json", "src/chart.ts", "src/index.tsx", "src/ui.css", "src/ui.tsx"],
   "exports": { ".": "./src/index.tsx", "./ui": "./src/ui.tsx", "./chart": "./src/chart.ts" },
   "peerDependencies": { "react": ">=19", "react-dom": ">=19" }
 }

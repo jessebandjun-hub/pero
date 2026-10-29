@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "app-sdk",
+  "files": [
+    "README.md",
+    "package.json",
+    "payload.json",
+    "src/chart.ts",
+    "src/index.tsx",
+    "src/ui.css",
+    "src/ui.tsx"
+  ],
+  "dependencies": [
+    { "name": "npm", "path": "package-lock.json" }
+  ]
+}
