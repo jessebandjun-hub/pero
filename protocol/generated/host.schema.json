@@ -556,6 +556,130 @@
       ],
       "additionalProperties": false
     },
+    "AutomationCatalog": {
+      "title": "AutomationCatalog",
+      "type": "object",
+      "properties": {
+        "automations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AutomationConfig"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "automations"
+      ],
+      "additionalProperties": false
+    },
+    "AutomationConfig": {
+      "title": "AutomationConfig",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "instruction",
+        "paused"
+      ],
+      "additionalProperties": false
+    },
+    "AutomationSettingsErrorEvent": {
+      "title": "AutomationSettingsErrorEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "automation_settings_error"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "message_key": {
+          "$ref": "#/$defs/MessageKey"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "Rejected pause, resume, update, or create. Carries no catalog, so a draft can stay."
+    },
+    "AutomationSettingsEvent": {
+      "title": "AutomationSettingsEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "automation_settings"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/AutomationCatalog"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text",
+        "data"
+      ],
+      "additionalProperties": false
+    },
     "BackendAccess": {
       "title": "BackendAccess",
       "type": "object",
@@ -1458,6 +1582,38 @@
       ],
       "additionalProperties": false
     },
+    "CreateAutomationRequest": {
+      "title": "CreateAutomationRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.create"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "method",
+        "id",
+        "name",
+        "instruction"
+      ],
+      "additionalProperties": false
+    },
     "DeleteCommand": {
       "title": "DeleteCommand",
       "type": "object",
@@ -1690,6 +1846,20 @@
       ],
       "additionalProperties": false
     },
+    "GetAutomationSettingsRequest": {
+      "title": "GetAutomationSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.get"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
     "GetWorkbenchSettingsRequest": {
       "title": "GetWorkbenchSettingsRequest",
       "type": "object",
@@ -1777,6 +1947,12 @@
         },
         {
           "$ref": "#/$defs/WorkbenchSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/AutomationSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/AutomationSettingsErrorEvent"
         },
         {
           "$ref": "#/$defs/RemoteSettingsSavedEvent"
@@ -1893,6 +2069,21 @@
         },
         {
           "$ref": "#/$defs/SetWorkbenchSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/GetAutomationSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/PauseAutomationRequest"
+        },
+        {
+          "$ref": "#/$defs/ResumeAutomationRequest"
+        },
+        {
+          "$ref": "#/$defs/UpdateAutomationRequest"
+        },
+        {
+          "$ref": "#/$defs/CreateAutomationRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"
@@ -2526,6 +2717,26 @@
       "additionalProperties": false,
       "description": "Emitted by Electron from the Workbench menu."
     },
+    "PauseAutomationRequest": {
+      "title": "PauseAutomationRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.pause"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "method",
+        "id"
+      ],
+      "additionalProperties": false
+    },
     "PermissionCommand": {
       "title": "PermissionCommand",
       "type": "object",
@@ -3122,6 +3333,26 @@
         "request_id",
         "kind",
         "source"
+      ],
+      "additionalProperties": false
+    },
+    "ResumeAutomationRequest": {
+      "title": "ResumeAutomationRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.resume"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "method",
+        "id"
       ],
       "additionalProperties": false
     },
@@ -4043,6 +4274,38 @@
         "name",
         "method",
         "id"
+      ],
+      "additionalProperties": false
+    },
+    "UpdateAutomationRequest": {
+      "title": "UpdateAutomationRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.update"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "method",
+        "id",
+        "name",
+        "instruction"
       ],
       "additionalProperties": false
     },

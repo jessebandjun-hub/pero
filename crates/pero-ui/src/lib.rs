@@ -27,6 +27,10 @@ mod local_roadmap;
 mod project_view;
 #[cfg_attr(not(any(target_family = "wasm", feature = "native")), allow(dead_code))]
 mod projects;
+#[cfg(any(target_family = "wasm", feature = "native", test))]
+mod automation_page;
+#[cfg(any(target_family = "wasm", feature = "native"))]
+mod automation_settings;
 #[cfg(any(target_family = "wasm", feature = "native"))]
 mod settings_menu;
 mod stream;

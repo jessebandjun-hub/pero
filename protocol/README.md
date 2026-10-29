@@ -28,6 +28,12 @@ Agent protocol implemented by the official native Rust SDK.
 `local-probe.schema.json` retains the bootstrap echo diagnostic. An echo verifies
 transport, not Agent work. `runtime-settings.schema.json` describes persisted
 language selection (`en` / `zh-CN`), emitted before the initial `ready` event.
+`settings.automation.get`, `settings.automation.pause`, `settings.automation.resume`,
+and `settings.automation.update` read or change an existing automation.
+`settings.automation.create` stores a new unpaused automation when the caller
+supplies a new id plus a name and instruction. A successful event carries the
+stored catalog. A rejected save, including a blank name or instruction, emits
+`automation_settings_error` and leaves the file unchanged.
 
 The desktop child uses inherited stdio, without a network listener. The separate
 Go control plane owns remote Task/Run coordination; a persistent local Desktop

@@ -66,6 +66,55 @@ fn main() -> io::Result<()> {
             emit(event)?;
             continue;
         }
+        if value
+            .get("method")
+            .and_then(|method| method.as_str())
+            .is_some_and(|method| method.starts_with("settings.automation"))
+        {
+            use pero_contracts::automation::{AutomationEdit, AutomationSettingsRequest};
+            let event = settings_path.as_deref().and_then(|path| {
+                let request = serde_json::from_value::<AutomationSettingsRequest>(value).ok()?;
+                let saved = pero_runtime::settings::load_automations(path);
+                let edit = match request {
+                    AutomationSettingsRequest::Get => None,
+                    AutomationSettingsRequest::Pause { id } => Some(AutomationEdit::Pause { id }),
+                    AutomationSettingsRequest::Resume { id } => Some(AutomationEdit::Resume { id }),
+                    AutomationSettingsRequest::Update {
+                        id,
+                        name,
+                        instruction,
+                    } => Some(AutomationEdit::Update {
+                        id,
+                        name,
+                        instruction,
+                    }),
+                    AutomationSettingsRequest::Create {
+                        id,
+                        name,
+                        instruction,
+                    } => Some(AutomationEdit::Create {
+                        id,
+                        name,
+                        instruction,
+                    }),
+                };
+                let catalog = match edit {
+                    None => saved,
+                    Some(edit) => {
+                        let catalog = saved.apply(edit).ok()?;
+                        pero_runtime::settings::save_automations(path, &catalog).ok()?;
+                        catalog
+                    }
+                };
+                let mut event = HostEvent::new("automation_settings", None, String::new());
+                event.data = serde_json::to_value(&catalog).ok()?;
+                Some(event)
+            });
+            emit(event.unwrap_or_else(|| {
+                HostEvent::message("automation_settings_error", None, "error.automation")
+            }))?;
+            continue;
+        }
         if value.get("method").and_then(|v| v.as_str()) == Some("contribution") {
             contributions::dispatch(value);
             continue;
