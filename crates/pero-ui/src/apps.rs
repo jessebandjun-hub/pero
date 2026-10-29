@@ -69,6 +69,28 @@ impl AppWorkspace {
     }
 }
 
+/// Neighbor swap the Apps page sends as `names`. `None` when `name` is absent
+/// or already at that end. The Host still rejects a bad permutation.
+pub(crate) fn catalog_order_after_move(
+    names: &[String],
+    name: &str,
+    earlier: bool,
+) -> Option<Vec<String>> {
+    let index = names.iter().position(|item| item == name)?;
+    let target = if earlier {
+        index.checked_sub(1)?
+    } else {
+        let next = index + 1;
+        if next >= names.len() {
+            return None;
+        }
+        next
+    };
+    let mut order = names.to_vec();
+    order.swap(index, target);
+    Some(order)
+}
+
 #[cfg(any(target_family = "wasm", feature = "native"))]
 mod surface {
     use super::*;
@@ -89,6 +111,21 @@ mod surface {
     }
 
     impl Workbench {
+        fn move_app(&mut self, name: &str, earlier: bool, cx: &mut Context<Self>) {
+            let names: Vec<String> = self
+                .apps
+                .catalog
+                .iter()
+                .map(|app| app.name.clone())
+                .collect();
+            let Some(next) = catalog_order_after_move(&names, name, earlier) else {
+                return;
+            };
+            self.apps.loading = true;
+            self.apps.error = None;
+            self.command(json!({"action":"apps_reorder","names":next}), cx);
+        }
+
         pub(crate) fn refresh_apps(&mut self, cx: &mut Context<Self>) {
             self.apps.error = None;
             self.apps.loading = cfg!(target_family = "wasm");
@@ -246,6 +283,18 @@ mod surface {
                                 .child(div().text_color(p.color("text-muted")).whitespace_normal().child(app.description.clone())))
                             .child(div().text_size(px(12.)).text_color(p.color("text-muted"))
                                 .child(self.t(if enabled { "apps.enabled" } else { "apps.disabled" })))
+                            .child(Button::new(("app-up", index)).outline().small().label(self.t("apps.move_up"))
+                                .disabled(busy || index == 0 || !cfg!(target_family = "wasm"))
+                                .on_click(cx.listener({
+                                    let name = name.clone();
+                                    move |this, _, _, cx| this.move_app(&name, true, cx)
+                                })))
+                            .child(Button::new(("app-down", index)).outline().small().label(self.t("apps.move_down"))
+                                .disabled(busy || index + 1 >= self.apps.catalog.len() || !cfg!(target_family = "wasm"))
+                                .on_click(cx.listener({
+                                    let name = name.clone();
+                                    move |this, _, _, cx| this.move_app(&name, false, cx)
+                                })))
                             .children(app.panels.iter().enumerate().map(|(panel_index, panel)| {
                                 let app_name = name.clone();
                                 let panel_name = panel.id.clone();
@@ -322,5 +371,35 @@ mod tests {
             workspace.replace_catalog(vec![]);
             assert!(workspace.active.is_none());
         }
+    }
+
+    #[test]
+    fn moving_an_app_swaps_it_with_its_neighbor() {
+        let names = |list: &str| {
+            list.split(',')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        let order = names("alpha,beta,gamma");
+        for (name, earlier, expected) in [
+            ("alpha", true, None),
+            ("alpha", false, Some("beta,alpha,gamma")),
+            ("beta", true, Some("beta,alpha,gamma")),
+            ("beta", false, Some("alpha,gamma,beta")),
+            ("gamma", true, Some("alpha,gamma,beta")),
+            ("gamma", false, None),
+            ("missing", true, None),
+            ("missing", false, None),
+        ] {
+            let actual = catalog_order_after_move(&order, name, earlier);
+            let expected_names = expected.map(names);
+            assert_eq!(
+                actual.as_deref(),
+                expected_names.as_deref(),
+                "{name} earlier={earlier}"
+            );
+        }
+        assert_eq!(catalog_order_after_move(&names(""), "alpha", false), None);
     }
 }

@@ -54,8 +54,9 @@ App port; its existing scientific methods and source attribution stay in the App
   when `names` lists each installed App once, and list replies then follow that
   sequence across restart. A rejected reorder leaves the file and the packages
   unchanged. Installed Apps the file does not name are listed after it, in name
-  order. Desktop does not send `reorder`. The workbench renders `apps_catalog`
-  in the order the Host already returned.
+  order. The Apps page sends `reorder` through `DesktopApps` when the user moves
+  an App up or down. That request stays on the apps channel; it is not a session
+  method. The workbench renders `apps_catalog` in the order the Host returned.
 
 The packages are trusted local executable code. Separate browser origins and a
 bounded proxy reduce the exposed UI surface; they do not sandbox Python's access

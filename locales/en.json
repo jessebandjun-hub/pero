@@ -353,6 +353,8 @@
   "apps.enabled": "Enabled",
   "apps.disabled": "Disabled",
   "apps.open": "Open",
+  "apps.move_up": "Move up",
+  "apps.move_down": "Move down",
   "apps.enable": "Enable",
   "apps.disable": "Disable",
   "apps.remove": "Remove",

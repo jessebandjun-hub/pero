@@ -353,6 +353,8 @@
   "apps.enabled": "已启用",
   "apps.disabled": "已停用",
   "apps.open": "打开",
+  "apps.move_up": "上移",
+  "apps.move_down": "下移",
   "apps.enable": "启用",
   "apps.disable": "停用",
   "apps.remove": "移除",
