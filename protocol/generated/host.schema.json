@@ -1503,6 +1503,26 @@
       ],
       "additionalProperties": false
     },
+    "DisablePluginRequest": {
+      "title": "DisablePluginRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.plugins.disable"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "method",
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "DisconnectedEvent": {
       "title": "DisconnectedEvent",
       "type": "object",
@@ -1624,6 +1644,26 @@
       ],
       "additionalProperties": false
     },
+    "EnablePluginRequest": {
+      "title": "EnablePluginRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.plugins.enable"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "method",
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "ErrorEvent": {
       "title": "ErrorEvent",
       "type": "object",
@@ -1687,6 +1727,20 @@
         "version",
         "request_id",
         "text"
+      ],
+      "additionalProperties": false
+    },
+    "GetPluginSettingsRequest": {
+      "title": "GetPluginSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.plugins.get"
+        }
+      },
+      "required": [
+        "method"
       ],
       "additionalProperties": false
     },
@@ -1777,6 +1831,12 @@
         },
         {
           "$ref": "#/$defs/WorkbenchSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/PluginSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/PluginSettingsErrorEvent"
         },
         {
           "$ref": "#/$defs/RemoteSettingsSavedEvent"
@@ -1893,6 +1953,15 @@
         },
         {
           "$ref": "#/$defs/SetWorkbenchSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/GetPluginSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/EnablePluginRequest"
+        },
+        {
+          "$ref": "#/$defs/DisablePluginRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"
@@ -2610,6 +2679,124 @@
         "request_id",
         "text",
         "thread_id",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "PluginCatalog": {
+      "title": "PluginCatalog",
+      "type": "object",
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginRecord"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "plugins"
+      ],
+      "additionalProperties": false
+    },
+    "PluginRecord": {
+      "title": "PluginRecord",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "PluginSettingsErrorEvent": {
+      "title": "PluginSettingsErrorEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plugin_settings_error"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "message_key": {
+          "$ref": "#/$defs/MessageKey"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "description": "Rejected enable or disable. Carries no catalog, so the page keeps the previous rows."
+    },
+    "PluginSettingsEvent": {
+      "title": "PluginSettingsEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plugin_settings"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/PluginCatalog"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text",
         "data"
       ],
       "additionalProperties": false

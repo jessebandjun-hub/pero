@@ -66,6 +66,40 @@ fn main() -> io::Result<()> {
             emit(event)?;
             continue;
         }
+        if value
+            .get("method")
+            .and_then(|method| method.as_str())
+            .is_some_and(|method| method.starts_with("settings.plugins"))
+        {
+            use pero_contracts::plugins::{PluginEdit, PluginSettingsRequest};
+            let event = settings_path.as_deref().and_then(|path| {
+                let request = serde_json::from_value::<PluginSettingsRequest>(value).ok()?;
+                let saved = pero_runtime::settings::load_plugins(path);
+                let changed = match request {
+                    PluginSettingsRequest::Get => None,
+                    PluginSettingsRequest::Enable { name } => {
+                        Some(saved.apply(PluginEdit::Enable { name }).ok()?)
+                    }
+                    PluginSettingsRequest::Disable { name } => {
+                        Some(saved.apply(PluginEdit::Disable { name }).ok()?)
+                    }
+                };
+                let catalog = match changed {
+                    None => saved,
+                    Some(catalog) => {
+                        pero_runtime::settings::save_plugins(path, &catalog).ok()?;
+                        catalog
+                    }
+                };
+                let mut event = HostEvent::new("plugin_settings", None, String::new());
+                event.data = serde_json::to_value(&catalog).ok()?;
+                Some(event)
+            });
+            emit(event.unwrap_or_else(|| {
+                HostEvent::message("plugin_settings_error", None, "error.plugins")
+            }))?;
+            continue;
+        }
         if value.get("method").and_then(|v| v.as_str()) == Some("contribution") {
             contributions::dispatch(value);
             continue;

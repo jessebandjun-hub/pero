@@ -3,6 +3,7 @@ pub mod composer_capabilities;
 pub mod context;
 pub mod i18n;
 pub mod local_worker;
+pub mod plugins;
 pub mod roadmap;
 pub mod session_settings;
 pub mod workbench;

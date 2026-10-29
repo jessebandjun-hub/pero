@@ -49,6 +49,16 @@ model ProjectBinding { @minLength(1) @maxLength(4096) workspace: string; @maxLen
 model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; ...Closed }
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
+model PluginRecord {
+  @minLength(1) @maxLength(128) name: string;
+  @minLength(1) @maxLength(64) version: string;
+  enabled: boolean;
+  ...Closed;
+}
+model PluginCatalog { @maxItems(64) plugins: PluginRecord[]; ...Closed }
+model GetPluginSettingsRequest { method: "settings.plugins.get"; ...Closed }
+model EnablePluginRequest { method: "settings.plugins.enable"; @minLength(1) @maxLength(128) name: string; ...Closed }
+model DisablePluginRequest { method: "settings.plugins.disable"; @minLength(1) @maxLength(128) name: string; ...Closed }
 
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
@@ -119,6 +129,9 @@ union HostInput {
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,
+  GetPluginSettingsRequest,
+  EnablePluginRequest,
+  DisablePluginRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -146,6 +159,9 @@ model ThreadEventBase {
 /** `text` is the active locale tag. */
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
+model PluginSettingsEvent { kind: "plugin_settings"; ...EventBase; data: PluginCatalog }
+/** Rejected enable or disable. Carries no catalog, so the page keeps the previous rows. */
+model PluginSettingsErrorEvent { kind: "plugin_settings_error"; ...SystemEventBase }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }
 model RemoteSettingsErrorEvent { kind: "remote_settings_error"; ...EventBase }
@@ -264,6 +280,8 @@ union HostEvent {
   Pero.Contributions.ContributionErrorEvent,
   SettingsEvent,
   WorkbenchSettingsEvent,
+  PluginSettingsEvent,
+  PluginSettingsErrorEvent,
   RemoteSettingsSavedEvent,
   RemoteSettingsErrorEvent,
   ReadyEvent,
