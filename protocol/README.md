@@ -29,8 +29,10 @@ Agent protocol implemented by the official native Rust SDK.
 transport, not Agent work. `runtime-settings.schema.json` describes persisted
 language selection (`en` / `zh-CN`), emitted before the initial `ready` event.
 `settings.automation.get`, `settings.automation.pause`, `settings.automation.resume`,
-and `settings.automation.update` read or change an existing automation catalog.
-A successful event carries the stored catalog. A rejected save emits
+and `settings.automation.update` read or change an existing automation.
+`settings.automation.create` stores a new unpaused automation when the caller
+supplies a new id plus a name and instruction. A successful event carries the
+stored catalog. A rejected save, including a blank name or instruction, emits
 `automation_settings_error` and leaves the file unchanged.
 
 The desktop child uses inherited stdio, without a network listener. The separate

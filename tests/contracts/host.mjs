@@ -32,6 +32,7 @@ const requestVariants = new Map([
   ['settings.automation.pause', 'PauseAutomationRequest'],
   ['settings.automation.resume', 'ResumeAutomationRequest'],
   ['settings.automation.update', 'UpdateAutomationRequest'],
+  ['settings.automation.create', 'CreateAutomationRequest'],
 ]);
 const explain = (name, value) => {
   if (!name) return 'no matching variant';
@@ -197,6 +198,17 @@ try {
 
   host.send({method:'settings.automation.get'});
   if (!isDeepStrictEqual((await host.next('automation_settings')).data, {automations:[]})) failures.push('Missing automations were not an empty catalog');
+  const beforeRejectedCreate = readFileSync(env.PERO_SETTINGS_PATH, 'utf8');
+  host.send({method:'settings.automation.create', id:'weekly', name:' ', instruction:'Summarize the week'});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  host.send({method:'settings.automation.create', id:'weekly', name:'Weekly digest', instruction:' '});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  if (readFileSync(env.PERO_SETTINGS_PATH, 'utf8') !== beforeRejectedCreate) failures.push('Rejected create changed the settings file');
+  host.send({method:'settings.automation.create', id:'weekly', name:'Weekly digest', instruction:'Summarize the week'});
+  const createdFromEmpty = await host.next('automation_settings');
+  const createdWeekly = {automations:[{id:'weekly', name:'Weekly digest', instruction:'Summarize the week', paused:false}]};
+  if (!isDeepStrictEqual(createdFromEmpty.data, createdWeekly)) failures.push('Create did not report the stored automation');
+  if (!isDeepStrictEqual(preferences().automations, createdWeekly)) failures.push('Create acknowledgement differed from the stored catalog');
   const storedAutomation = {id:'nightly', name:'Nightly summary', instruction:'Summarize ROADMAP', paused:false};
   const seeded = preferences();
   seeded.automations = {automations:[storedAutomation]};
@@ -221,6 +233,18 @@ try {
   host.send({method:'settings.automation.pause', id:'missing'});
   await host.next('automation_settings_error', event => event.message_key === 'error.automation');
   if (!isDeepStrictEqual(preferences().automations, resumedAutomation.data)) failures.push('Pausing a missing automation changed the stored catalog');
+  const beforeRejectedAppend = readFileSync(env.PERO_SETTINGS_PATH, 'utf8');
+  host.send({method:'settings.automation.create', id:'weekly', name:' ', instruction:'kept input'});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  host.send({method:'settings.automation.create', id:'weekly', name:'Weekly digest', instruction:' '});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  host.send({method:'settings.automation.create', id:'nightly', name:'Duplicate', instruction:'Should not store'});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  if (readFileSync(env.PERO_SETTINGS_PATH, 'utf8') !== beforeRejectedAppend) failures.push('Rejected create changed the stored catalog');
+  host.send({method:'settings.automation.create', id:'weekly', name:'Weekly digest', instruction:'Summarize the week'});
+  const createdAlongside = await host.next('automation_settings');
+  if (createdAlongside.data.automations.length !== 2 || createdAlongside.data.automations[1].id !== 'weekly' || createdAlongside.data.automations[1].paused !== false || createdAlongside.data.automations[0].name !== 'Morning summary') failures.push('Create did not append a new automation');
+  if (!isDeepStrictEqual(preferences().automations, createdAlongside.data)) failures.push('Create acknowledgement differed from the stored catalog');
   if (preferences().locale !== 'zh-CN' || preferences().workbench.appearance !== 'dark') failures.push('Automation save replaced other settings');
   const effectiveAutomation = structuredClone(preferences().automations);
   await host.stop();

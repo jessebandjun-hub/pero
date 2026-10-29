@@ -67,6 +67,13 @@ model UpdateAutomationRequest {
   @minLength(1) @maxLength(4096) instruction: string;
   ...Closed;
 }
+model CreateAutomationRequest {
+  method: "settings.automation.create";
+  @minLength(1) @maxLength(128) id: string;
+  @minLength(1) @maxLength(128) name: string;
+  @minLength(1) @maxLength(4096) instruction: string;
+  ...Closed;
+}
 
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
@@ -141,6 +148,7 @@ union HostInput {
   PauseAutomationRequest,
   ResumeAutomationRequest,
   UpdateAutomationRequest,
+  CreateAutomationRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -169,7 +177,7 @@ model ThreadEventBase {
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
 model AutomationSettingsEvent { kind: "automation_settings"; ...EventBase; data: AutomationCatalog }
-/** Rejected pause, resume, or update. Carries no catalog, so a draft can stay. */
+/** Rejected pause, resume, update, or create. Carries no catalog, so a draft can stay. */
 model AutomationSettingsErrorEvent { kind: "automation_settings_error"; ...SystemEventBase }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }

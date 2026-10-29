@@ -75,31 +75,33 @@ fn main() -> io::Result<()> {
             let event = settings_path.as_deref().and_then(|path| {
                 let request = serde_json::from_value::<AutomationSettingsRequest>(value).ok()?;
                 let saved = pero_runtime::settings::load_automations(path);
-                let changed = match request {
+                let edit = match request {
                     AutomationSettingsRequest::Get => None,
-                    AutomationSettingsRequest::Pause { id } => {
-                        Some(saved.apply(AutomationEdit::Pause { id }).ok()?)
-                    }
-                    AutomationSettingsRequest::Resume { id } => {
-                        Some(saved.apply(AutomationEdit::Resume { id }).ok()?)
-                    }
+                    AutomationSettingsRequest::Pause { id } => Some(AutomationEdit::Pause { id }),
+                    AutomationSettingsRequest::Resume { id } => Some(AutomationEdit::Resume { id }),
                     AutomationSettingsRequest::Update {
                         id,
                         name,
                         instruction,
-                    } => Some(
-                        saved
-                            .apply(AutomationEdit::Update {
-                                id,
-                                name,
-                                instruction,
-                            })
-                            .ok()?,
-                    ),
+                    } => Some(AutomationEdit::Update {
+                        id,
+                        name,
+                        instruction,
+                    }),
+                    AutomationSettingsRequest::Create {
+                        id,
+                        name,
+                        instruction,
+                    } => Some(AutomationEdit::Create {
+                        id,
+                        name,
+                        instruction,
+                    }),
                 };
-                let catalog = match changed {
+                let catalog = match edit {
                     None => saved,
-                    Some(catalog) => {
+                    Some(edit) => {
+                        let catalog = saved.apply(edit).ok()?;
                         pero_runtime::settings::save_automations(path, &catalog).ok()?;
                         catalog
                     }

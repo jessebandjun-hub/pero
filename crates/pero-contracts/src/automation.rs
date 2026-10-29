@@ -1,8 +1,8 @@
 //! Host-owned automation catalog.
 //!
-//! Pause, resume, and update return the catalog that was stored. A rejected
-//! edit leaves that catalog in place. [`AutomationEditor`] keeps the typed
-//! draft until an effective catalog contains the same name and instruction.
+//! Pause, resume, update, and create return the catalog that was stored. A
+//! rejected edit leaves that catalog in place. [`AutomationEditor`] keeps the
+//! typed draft until an effective catalog contains the same name and instruction.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,26 +41,56 @@ impl AutomationCatalog {
             })
     }
 
-    /// The catalog after a pause, resume, or update, or rejection when the
-    /// edit does not apply to an existing valid record.
+    /// The catalog after a pause, resume, update, or create. Rejection leaves
+    /// the receiver unchanged: create refuses a duplicate or invalid record,
+    /// and the other edits must name an existing valid record.
     pub fn apply(&self, edit: AutomationEdit) -> Result<Self, AutomationRejected> {
         if !self.valid() {
             return Err(AutomationRejected);
         }
         let mut next = self.clone();
-        let Some(item) = next
-            .automations
-            .iter_mut()
-            .find(|item| item.id == edit.id())
-        else {
-            return Err(AutomationRejected);
-        };
         match edit {
-            AutomationEdit::Pause { .. } => item.paused = true,
-            AutomationEdit::Resume { .. } => item.paused = false,
-            AutomationEdit::Update {
-                name, instruction, ..
+            AutomationEdit::Create {
+                id,
+                name,
+                instruction,
             } => {
+                if next.automations.iter().any(|item| item.id == id) {
+                    return Err(AutomationRejected);
+                }
+                next.automations.push(AutomationConfig {
+                    id,
+                    name,
+                    instruction,
+                    paused: false,
+                });
+            }
+            AutomationEdit::Pause { id } => {
+                let item = next
+                    .automations
+                    .iter_mut()
+                    .find(|item| item.id == id)
+                    .ok_or(AutomationRejected)?;
+                item.paused = true;
+            }
+            AutomationEdit::Resume { id } => {
+                let item = next
+                    .automations
+                    .iter_mut()
+                    .find(|item| item.id == id)
+                    .ok_or(AutomationRejected)?;
+                item.paused = false;
+            }
+            AutomationEdit::Update {
+                id,
+                name,
+                instruction,
+            } => {
+                let item = next
+                    .automations
+                    .iter_mut()
+                    .find(|item| item.id == id)
+                    .ok_or(AutomationRejected)?;
                 item.name = name;
                 item.instruction = instruction;
             }
@@ -82,14 +112,11 @@ pub enum AutomationEdit {
         name: String,
         instruction: String,
     },
-}
-
-impl AutomationEdit {
-    fn id(&self) -> &str {
-        match self {
-            Self::Pause { id } | Self::Resume { id } | Self::Update { id, .. } => id,
-        }
-    }
+    Create {
+        id: String,
+        name: String,
+        instruction: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +130,12 @@ pub enum AutomationSettingsRequest {
     Resume { id: String },
     #[serde(rename = "settings.automation.update")]
     Update {
+        id: String,
+        name: String,
+        instruction: String,
+    },
+    #[serde(rename = "settings.automation.create")]
+    Create {
         id: String,
         name: String,
         instruction: String,
@@ -231,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn pause_edit_and_resume_report_the_stored_catalog_or_leave_it() {
+    fn apply_returns_the_stored_catalog_or_leaves_it() {
         let origin = sample(false);
         let paused = origin
             .apply(AutomationEdit::Pause {
@@ -262,6 +295,73 @@ mod tests {
             resumed.automations[0].instruction,
             edited.automations[0].instruction
         );
+
+        let empty = AutomationCatalog::default();
+        let created = empty
+            .apply(AutomationEdit::Create {
+                id: "weekly".into(),
+                name: "Weekly digest".into(),
+                instruction: "Summarize the week\nKeep the list.".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            created.automations,
+            vec![AutomationConfig {
+                id: "weekly".into(),
+                name: "Weekly digest".into(),
+                instruction: "Summarize the week\nKeep the list.".into(),
+                paused: false,
+            }]
+        );
+        assert!(empty.automations.is_empty());
+        let with_both = created
+            .apply(AutomationEdit::Create {
+                id: "nightly".into(),
+                name: "Nightly summary".into(),
+                instruction: "Summarize ROADMAP".into(),
+            })
+            .unwrap();
+        assert_eq!(with_both.automations.len(), 2);
+        assert_eq!(with_both.automations[0].id, "weekly");
+        assert!(
+            empty
+                .apply(AutomationEdit::Create {
+                    id: "weekly".into(),
+                    name: " ".into(),
+                    instruction: "kept".into(),
+                })
+                .is_err()
+        );
+        assert!(
+            empty
+                .apply(AutomationEdit::Create {
+                    id: "weekly".into(),
+                    name: "Weekly digest".into(),
+                    instruction: " ".into(),
+                })
+                .is_err()
+        );
+        assert!(empty.automations.is_empty());
+        let full = AutomationCatalog {
+            automations: (0..64)
+                .map(|index| AutomationConfig {
+                    id: format!("a{index}"),
+                    name: format!("Automation {index}"),
+                    instruction: "Run".into(),
+                    paused: false,
+                })
+                .collect(),
+        };
+        assert!(full.valid());
+        assert!(
+            full.apply(AutomationEdit::Create {
+                id: "extra".into(),
+                name: "Extra".into(),
+                instruction: "Run".into(),
+            })
+            .is_err()
+        );
+        assert_eq!(full.automations.len(), 64);
 
         for (catalog, edit) in [
             (
@@ -297,6 +397,38 @@ mod tests {
                 AutomationEdit::Update {
                     id: "nightly".into(),
                     name: "x".repeat(129),
+                    instruction: "kept".into(),
+                },
+            ),
+            (
+                origin.clone(),
+                AutomationEdit::Create {
+                    id: "nightly".into(),
+                    name: "Other".into(),
+                    instruction: "Other".into(),
+                },
+            ),
+            (
+                origin.clone(),
+                AutomationEdit::Create {
+                    id: "weekly".into(),
+                    name: " ".into(),
+                    instruction: "kept".into(),
+                },
+            ),
+            (
+                origin.clone(),
+                AutomationEdit::Create {
+                    id: "weekly".into(),
+                    name: "Weekly digest".into(),
+                    instruction: " ".into(),
+                },
+            ),
+            (
+                origin.clone(),
+                AutomationEdit::Create {
+                    id: " ".into(),
+                    name: "Weekly digest".into(),
                     instruction: "kept".into(),
                 },
             ),

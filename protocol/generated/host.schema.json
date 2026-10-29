@@ -640,7 +640,7 @@
         "text"
       ],
       "additionalProperties": false,
-      "description": "Rejected pause, resume, or update. Carries no catalog, so a draft can stay."
+      "description": "Rejected pause, resume, update, or create. Carries no catalog, so a draft can stay."
     },
     "AutomationSettingsEvent": {
       "title": "AutomationSettingsEvent",
@@ -1582,6 +1582,38 @@
       ],
       "additionalProperties": false
     },
+    "CreateAutomationRequest": {
+      "title": "CreateAutomationRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.automation.create"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "method",
+        "id",
+        "name",
+        "instruction"
+      ],
+      "additionalProperties": false
+    },
     "DeleteCommand": {
       "title": "DeleteCommand",
       "type": "object",
@@ -2049,6 +2081,9 @@
         },
         {
           "$ref": "#/$defs/UpdateAutomationRequest"
+        },
+        {
+          "$ref": "#/$defs/CreateAutomationRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"

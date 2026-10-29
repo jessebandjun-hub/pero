@@ -15,6 +15,7 @@ export type HostInput =
   | PauseAutomationRequest
   | ResumeAutomationRequest
   | UpdateAutomationRequest
+  | CreateAutomationRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
@@ -185,6 +186,12 @@ export interface ResumeAutomationRequest {
 }
 export interface UpdateAutomationRequest {
   method: "settings.automation.update";
+  id: string;
+  name: string;
+  instruction: string;
+}
+export interface CreateAutomationRequest {
+  method: "settings.automation.create";
   id: string;
   name: string;
   instruction: string;
@@ -463,7 +470,7 @@ export interface AutomationConfig {
   paused: boolean;
 }
 /**
- * Rejected pause, resume, or update. Carries no catalog, so a draft can stay.
+ * Rejected pause, resume, update, or create. Carries no catalog, so a draft can stay.
  */
 export interface AutomationSettingsErrorEvent {
   kind: "automation_settings_error";
