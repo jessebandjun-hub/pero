@@ -5,9 +5,10 @@ date: 2026-10-29
 
 # Automation settings
 
-ROADMAP item 「自动化设置页」 stays unchecked. This slice is the Host catalog
-the Desktop page will view and edit. It is L0 evidence on top of `master`
-`604cca1`. It does not mark the item complete.
+ROADMAP item 「自动化设置页」 stays unchecked. Host catalog commands and the
+Desktop settings section are in place. Evidence is L0 on top of `master`
+`604cca1`. A running Electron session has not been recorded, so the checkbox
+stays open.
 
 ## Stored catalog
 
@@ -34,6 +35,19 @@ Host methods:
 Success event: `automation_settings`, `data` is the stored catalog.
 Failure event: `automation_settings_error` with `error.automation`.
 
+## Desktop page
+
+All settings renders the catalog through `AutomationPage`, which folds
+`automation_settings.data` with `AutomationEditor`. The section shows empty,
+loading, error, and disconnected states. Pause, resume, and save send
+`settings.automation.pause`, `resume`, and `update`. Electron forwards those
+methods to the Host. `automation_settings_error` does not replace the typed
+draft or the input fields. A rejected save still shows the stored catalog in
+`data`, including the stored name next to the draft.
+
+Creating an automation is still out of scope. The page only edits records the
+Host already stored.
+
 ## Verification
 
 - `cargo test -p pero-contracts -p pero-runtime --lib automation` passed:
@@ -44,11 +58,14 @@ Failure event: `automation_settings_error` with `error.automation`.
   pause, update, and resume each matched the file. A blank name and an unknown
   id emitted `automation_settings_error` and left the stored catalog in place.
   Restart returned the same catalog. Locale and workbench preferences remained.
+- `cargo test -p pero-ui --lib automation_page` passed: empty, loading, error,
+  and disconnected screens, the pause / resume / update commands, and draft
+  retention when `automation_settings_error` or an invalid catalog arrives.
+  `cargo check -p pero-ui --target wasm32-unknown-unknown` compiled the settings
+  section. No Electron session was run.
 
 ## Open follow-ups
 
-- Desktop settings page that loads the catalog, sends pause, update, and
-  resume, and renders `automation_settings.data` through `AutomationEditor`.
-- On `automation_settings_error`, leave the draft on screen.
-- Empty, loading, error, and disabled states in the running workbench.
+- No Electron recording of the settings section: empty, loading, error,
+  disconnected, pause, resume, and a rejected save that keeps the typed draft.
 - Creating an automation is outside this item.

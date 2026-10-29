@@ -38,6 +38,9 @@ pub(crate) struct Workbench {
     pub system_dark: bool,
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
+    pub automation: crate::automation_page::AutomationPage,
+    pub automation_name: Entity<InputState>,
+    pub automation_instruction: Entity<TextareaState>,
     pub settings_menu_open: bool,
     pub recent_tasks: Vec<String>,
     pub selected_project: Option<String>,
@@ -143,6 +146,33 @@ impl Workbench {
             }
             cx.notify();
         }));
+        let automation_name = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(pero_contracts::i18n::text(
+                &locale,
+                "settings.automations_name",
+            ))
+        });
+        let automation_instruction = cx.new(|cx| {
+            TextareaState::new(window, cx).placeholder(pero_contracts::i18n::text(
+                &locale,
+                "settings.automations_instruction",
+            ))
+        });
+        subscriptions.push(cx.subscribe(&automation_name, |this, _, event, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.note_automation_typing(cx);
+            }
+            cx.notify();
+        }));
+        subscriptions.push(cx.subscribe(
+            &automation_instruction,
+            |this, _, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.note_automation_typing(cx);
+                }
+                cx.notify();
+            },
+        ));
         let remote = crate::remote::RemoteState::new(window, cx);
         let local_execution = crate::local_execution::LocalExecution::new(&locale, window, cx);
         Self {
@@ -159,6 +189,9 @@ impl Workbench {
             system_dark: dark,
             preferences: Default::default(),
             preferences_status: Default::default(),
+            automation: Default::default(),
+            automation_name,
+            automation_instruction,
             settings_menu_open: false,
             recent_tasks: Vec::new(),
             selected_project: None,
@@ -264,13 +297,31 @@ impl Workbench {
                     self.error = None;
                 }
             }
+            "automation_settings" | "automation_settings_error" => {
+                self.automation.receive(&event);
+                if event.kind == "automation_settings"
+                    && self.automation.screen(self.connected).error.is_none()
+                    && matches!(
+                        self.error.as_deref(),
+                        Some("error.connection" | "error.automation" | "error.agent_browser")
+                    )
+                {
+                    self.error = None;
+                }
+            }
             "settings" => {
                 self.locale = pero_contracts::i18n::normalize(&event.text).into();
                 gpui_kit::component::set_locale(&self.locale);
             }
-            "ready" => self.connected = true,
+            "ready" => {
+                self.connected = true;
+                if self.navigation == 10 {
+                    self.request_automations(cx);
+                }
+            }
             "disconnected" => {
                 self.connected = false;
+                self.automation.receive(&event);
                 self.pending = None;
                 for chat in &mut self.chats {
                     chat.pending_model = None;
@@ -286,6 +337,14 @@ impl Workbench {
             "error" => {
                 if event.message_key.as_deref() == Some("error.preferences") {
                     self.preferences_status = crate::settings_menu::PreferenceSaveState::Idle;
+                }
+                if self.automation.awaiting() {
+                    self.automation.rejected(
+                        event
+                            .message_key
+                            .as_deref()
+                            .unwrap_or("error.connection"),
+                    );
                 }
                 self.error = Some(event.message_key.clone().unwrap_or_else(|| {
                     if event.text.is_empty() {
@@ -452,6 +511,8 @@ pub fn snapshot() -> String {
             "renderedBytes":ui.chats.iter().map(|c|c.messages.iter().map(|m|m.view.read(cx).rendered_bytes(cx)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         });
         value["preferencesStatus"] = serde_json::json!(ui.preferences_status);
+        value["automation"] = serde_json::to_value(ui.automation.screen(ui.connected))
+            .unwrap_or(serde_json::Value::Null);
         value["projectBinding"] = serde_json::json!(ui.project_binding.read(cx).value().as_ref());
         value["sidebarSearch"] = serde_json::json!(ui.search.read(cx).value().as_ref());
         value["deletingChat"] = serde_json::json!(ui.deleting_chat);

@@ -48,7 +48,7 @@ Local workspace ROADMAP loading and ACP execution: [local-roadmap.md](local-road
 
 MCP 「工具与资源」 acceptance progress, with the ROADMAP checkbox still open: [mcp-tools-resources.md](mcp-tools-resources.md).
 
-Host automation settings, with the Desktop page and ROADMAP checkbox still open: [automation-settings.md](automation-settings.md).
+Desktop automation settings render the stored catalog. Electron evidence and the ROADMAP checkbox are still open: [automation-settings.md](automation-settings.md).
 
 Current conversation and ACP UI acceptance: [conversation-verification.md](conversation-verification.md). The bootstrap-only boundaries above are historical; actual provider replies and remaining limits are recorded separately.
 
