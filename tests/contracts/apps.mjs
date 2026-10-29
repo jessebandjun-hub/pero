@@ -1,4 +1,5 @@
-// One real stdio wiring check for App install, startup recovery and private resolution.
+// One real stdio wiring check for App install, enable/disable catalog refresh,
+// startup recovery and private resolution.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
@@ -57,14 +58,38 @@ const launch = async () => {
 let host;
 try {
   host = await launch();
+  const catalog = (result, enabled) => {
+    assert.equal(result.ok, true);
+    assert.equal(result.value.length, 1);
+    assert.equal(result.value[0].name, 'sample');
+    assert.equal(result.value[0].enabled, enabled);
+  };
   assert.deepEqual(await host.request('list'), { ok: true, value: [] });
   const installed = await host.request('install', { path: source });
-  assert.equal(installed.value[0].name, 'sample');
-  assert.equal(installed.value[0].enabled, false);
-  assert.equal((await host.request('enable', { name: 'sample' })).ok, true);
+  catalog(installed, false);
+  catalog(await host.request('enable', { name: 'sample' }), true);
+  catalog(await host.request('list'), true);
+  catalog(await host.request('enable', { name: 'sample' }), true);
+  catalog(await host.request('disable', { name: 'sample' }), false);
+  catalog(await host.request('list'), false);
+  const refused = await host.request('resolve', { name: 'sample' });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error, 'App is disabled; enable it before opening');
+  catalog(await host.request('disable', { name: 'sample' }), false);
+  for (const action of ['enable', 'disable']) {
+    const missing = await host.request(action, { name: 'missing' });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.error, 'App is not installed');
+  }
+  catalog(await host.request('list'), false);
   await host.close();
   host = await launch();
-  assert.equal((await host.request('list')).value[0].enabled, true);
+  catalog(await host.request('list'), false);
+  assert.equal((await host.request('resolve', { name: 'sample' })).ok, false);
+  catalog(await host.request('enable', { name: 'sample' }), true);
+  await host.close();
+  host = await launch();
+  catalog(await host.request('list'), true);
   const access = await host.request('resolve', { name: 'sample' });
   assert.equal(access.value.entry, 'dist/index.html');
   assert.equal(access.value.root, await realpath(resolve(temp, 'installed/sample')));

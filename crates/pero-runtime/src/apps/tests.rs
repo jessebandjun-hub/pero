@@ -146,6 +146,46 @@ fn rejected_package_does_not_publish_partial_install() {
 }
 
 #[test]
+fn enable_disable_refreshes_the_catalog_and_survives_restart() {
+    let workspace = Workspace::new();
+    let source = workspace.package(None);
+    let name = AppName::try_from("virtual-cell".to_string()).unwrap();
+    let missing = AppName::try_from("missing".to_string()).unwrap();
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    let installed = store.install(&source).unwrap();
+    assert_eq!(installed.len(), 1);
+    assert!(!installed[0].enabled);
+    let enabled = store.set_enabled(&name, true).unwrap();
+    assert!(enabled[0].enabled);
+    assert!(store.set_enabled(&name, true).unwrap()[0].enabled);
+    assert!(store.list()[0].enabled);
+    drop(store);
+    let mut store = AppStore::open(root.clone()).unwrap();
+    assert!(store.list()[0].enabled);
+    let disabled = store.set_enabled(&name, false).unwrap();
+    assert_eq!(disabled.len(), 1);
+    assert!(!disabled[0].enabled);
+    assert!(!store.list()[0].enabled);
+    assert!(store.resolve(&name).is_err());
+    assert!(!store.set_enabled(&name, false).unwrap()[0].enabled);
+    assert_eq!(
+        store.set_enabled(&missing, true).unwrap_err(),
+        "App is not installed"
+    );
+    assert_eq!(
+        store.set_enabled(&missing, false).unwrap_err(),
+        "App is not installed"
+    );
+    assert_eq!(store.list().len(), 1);
+    drop(store);
+    let mut store = AppStore::open(root).unwrap();
+    assert_eq!(store.list().len(), 1);
+    assert!(!store.list()[0].enabled);
+    assert!(store.resolve(&name).is_err());
+}
+
+#[test]
 fn backend_lifecycle() {
     for kind in ["python", "node"] {
         let workspace = Workspace::new();
