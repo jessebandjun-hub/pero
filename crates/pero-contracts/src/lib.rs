@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub mod automation;
 pub mod composer_capabilities;
 pub mod context;
 pub mod i18n;

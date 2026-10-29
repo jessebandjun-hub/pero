@@ -23,6 +23,16 @@ const variants = (union, tag) => schema.$defs[union].oneOf.flatMap(function flat
 });
 const eventVariants = new Map(variants('HostEvent', 'kind'));
 const commandVariants = new Map(variants('HostCommand', 'action'));
+const requestVariants = new Map([
+  ['settings.locale', 'SetLocaleRequest'],
+  ['settings.remote', 'SetRemoteSettingsRequest'],
+  ['settings.workbench', 'SetWorkbenchSettingsRequest'],
+  ['settings.workbench.get', 'GetWorkbenchSettingsRequest'],
+  ['settings.automation.get', 'GetAutomationSettingsRequest'],
+  ['settings.automation.pause', 'PauseAutomationRequest'],
+  ['settings.automation.resume', 'ResumeAutomationRequest'],
+  ['settings.automation.update', 'UpdateAutomationRequest'],
+]);
 const explain = (name, value) => {
   if (!name) return 'no matching variant';
   const validate = validator(name);
@@ -58,7 +68,7 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
+      const name = input.action ? commandVariants.get(input.action) : requestVariants.get(input.method) ?? 'EchoRequest';
       const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
@@ -184,6 +194,35 @@ try {
   host.send({action:'search_context',request_id:'thread-after-delete',kind:'thread',query:'hello'});
   const afterDelete = await host.next('context_candidates', e => e.request_id === 'thread-after-delete');
   if (afterDelete.data.some(item => item.source === thread || item.source === 'delete-live')) failures.push('deleted thread remained searchable');
+
+  host.send({method:'settings.automation.get'});
+  if (!isDeepStrictEqual((await host.next('automation_settings')).data, {automations:[]})) failures.push('Missing automations were not an empty catalog');
+  const storedAutomation = {id:'nightly', name:'Nightly summary', instruction:'Summarize ROADMAP', paused:false};
+  const seeded = preferences();
+  seeded.automations = {automations:[storedAutomation]};
+  writeFileSync(env.PERO_SETTINGS_PATH, JSON.stringify(seeded));
+  host.send({method:'settings.automation.get'});
+  if (!isDeepStrictEqual((await host.next('automation_settings')).data, seeded.automations)) failures.push('Host did not show the stored automation');
+  host.send({method:'settings.automation.pause', id:'nightly'});
+  const pausedAutomation = await host.next('automation_settings');
+  if (pausedAutomation.data.automations[0].paused !== true || pausedAutomation.data.automations[0].name !== 'Nightly summary') failures.push('Pause did not report the effective automation');
+  if (!isDeepStrictEqual(preferences().automations, pausedAutomation.data)) failures.push('Pause acknowledgement differed from the stored catalog');
+  host.send({method:'settings.automation.update', id:'nightly', name:'Morning summary', instruction:'Summarize overnight changes'});
+  const editedAutomation = await host.next('automation_settings');
+  if (editedAutomation.data.automations[0].name !== 'Morning summary' || editedAutomation.data.automations[0].paused !== true || editedAutomation.data.automations[0].instruction !== 'Summarize overnight changes') failures.push('Edit did not report the stored automation');
+  host.send({method:'settings.automation.update', id:'nightly', name:' ', instruction:'kept input'});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation' && event.data === undefined);
+  if (preferences().automations.automations[0].name !== 'Morning summary' || preferences().automations.automations[0].paused !== true) failures.push('Failed save replaced the stored automation');
+  host.send({method:'settings.automation.get'});
+  if (!isDeepStrictEqual((await host.next('automation_settings')).data, preferences().automations)) failures.push('Get after a failed save did not return the stored automation');
+  host.send({method:'settings.automation.resume', id:'nightly'});
+  const resumedAutomation = await host.next('automation_settings');
+  if (resumedAutomation.data.automations[0].paused !== false || resumedAutomation.data.automations[0].instruction !== 'Summarize overnight changes') failures.push('Resume did not report the effective automation');
+  host.send({method:'settings.automation.pause', id:'missing'});
+  await host.next('automation_settings_error', event => event.message_key === 'error.automation');
+  if (!isDeepStrictEqual(preferences().automations, resumedAutomation.data)) failures.push('Pausing a missing automation changed the stored catalog');
+  if (preferences().locale !== 'zh-CN' || preferences().workbench.appearance !== 'dark') failures.push('Automation save replaced other settings');
+  const effectiveAutomation = structuredClone(preferences().automations);
   await host.stop();
 
   // A fresh Host replays the journal written above.
@@ -191,6 +230,8 @@ try {
   await host.next('ready');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Workbench preferences were lost after Host restart');
+  host.send({method:'settings.automation.get'});
+  if (!isDeepStrictEqual((await host.next('automation_settings')).data, effectiveAutomation)) failures.push('Automation settings were lost after Host restart');
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Remote preference was lost after Host restart');
   host.send({ method: 'settings.remote', id: 'remote-disconnect', connection: null });
   await host.next('remote_settings_saved', e => e.request_id === 'remote-disconnect');

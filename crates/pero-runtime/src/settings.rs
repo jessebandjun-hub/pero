@@ -70,6 +70,29 @@ pub fn load_workbench(path: &Path) -> pero_contracts::workbench::WorkbenchPrefer
         .unwrap_or_default()
 }
 
+pub fn load_automations(path: &Path) -> pero_contracts::automation::AutomationCatalog {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| serde_json::from_value(value["automations"].clone()).ok())
+        .filter(pero_contracts::automation::AutomationCatalog::valid)
+        .unwrap_or_default()
+}
+
+pub fn save_automations(
+    path: &Path,
+    catalog: &pero_contracts::automation::AutomationCatalog,
+) -> io::Result<()> {
+    if !catalog.valid() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid automation settings",
+        ));
+    }
+    let catalog = serde_json::to_value(catalog)?;
+    update(path, |value| value["automations"] = catalog)
+}
+
 pub fn save_workbench(path: &Path, preferences: &pero_contracts::workbench::WorkbenchPreferences) -> io::Result<()> {
     if !preferences.valid() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid workbench preferences"));
@@ -146,6 +169,59 @@ mod tests {
         std::fs::write(&path, "invalid").unwrap();
         assert!(save_locale(&path, "en").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn automation_settings_round_trip_and_failed_save_keeps_the_file() {
+        use pero_contracts::automation::{AutomationCatalog, AutomationConfig};
+        let path = std::env::temp_dir().join(format!(
+            "pero-automation-settings-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, r#"{"locale":"en","other":{"enabled":true}}"#).unwrap();
+        assert!(load_automations(&path).automations.is_empty());
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("automations")
+        );
+        let stored = AutomationCatalog {
+            automations: vec![AutomationConfig {
+                id: "nightly".into(),
+                name: "Nightly summary".into(),
+                instruction: "Summarize ROADMAP".into(),
+                paused: false,
+            }],
+        };
+        save_automations(&path, &stored).unwrap();
+        assert_eq!(load_automations(&path), stored);
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["locale"], "en");
+        assert_eq!(value["other"]["enabled"], true);
+        let rejected = AutomationCatalog {
+            automations: vec![AutomationConfig {
+                id: "nightly".into(),
+                name: String::new(),
+                instruction: "typed but not stored".into(),
+                paused: true,
+            }],
+        };
+        assert!(save_automations(&path, &rejected).is_err());
+        assert_eq!(load_automations(&path), stored);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&path, "invalid").unwrap();
+        assert!(save_automations(&path, &stored).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        assert_eq!(load_automations(&path), AutomationCatalog::default());
         std::fs::remove_file(path).unwrap();
     }
 }
