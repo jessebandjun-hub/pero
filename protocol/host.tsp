@@ -50,6 +50,60 @@ model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
 
+enum ChannelKind { wechat, wecom, feishu, dingtalk, slack, teams, discord }
+enum ChannelFailureReason { credential_rejected, invalid_parameters, unknown_channel }
+enum ChannelRecovery { replace_credential, edit_parameters }
+model ChannelConnectedView {
+  @minLength(1) @maxLength(64) id: string;
+  kind: ChannelKind;
+  @minLength(1) @maxLength(2048) endpoint: string;
+  @minLength(1) @maxLength(128) account: string;
+  credential_configured: true;
+  status: "connected";
+  ...Closed;
+}
+model ChannelDisconnectedView {
+  @minLength(1) @maxLength(64) id: string;
+  kind: ChannelKind;
+  @minLength(1) @maxLength(2048) endpoint: string;
+  @minLength(1) @maxLength(128) account: string;
+  credential_configured: true;
+  status: "disconnected";
+  ...Closed;
+}
+model ChannelErrorView {
+  @minLength(1) @maxLength(64) id: string;
+  kind: ChannelKind;
+  @minLength(1) @maxLength(2048) endpoint: string;
+  @minLength(1) @maxLength(128) account: string;
+  credential_configured: true;
+  status: "error";
+  reason: "credential_rejected";
+  recovery: "replace_credential";
+  ...Closed;
+}
+@oneOf union ChannelView { ChannelConnectedView, ChannelDisconnectedView, ChannelErrorView }
+model ChannelCatalogView { @maxItems(16) channels: ChannelView[]; ...Closed }
+model GetChannelSettingsRequest { method: "settings.channel.get"; ...Closed }
+model SetChannelSettingsRequest {
+  method: "settings.channel.set";
+  @minLength(1) @maxLength(64) id: string;
+  kind: ChannelKind;
+  @minLength(1) @maxLength(2048) endpoint: string;
+  @minLength(1) @maxLength(128) account: string;
+  @minLength(4) @maxLength(4096) credential: string;
+  ...Closed;
+}
+model ConnectChannelRequest { method: "settings.channel.connect"; @minLength(1) @maxLength(64) id: string; ...Closed }
+model DisconnectChannelRequest { method: "settings.channel.disconnect"; @minLength(1) @maxLength(64) id: string; ...Closed }
+model ChannelFailure {
+  @maxLength(128) id: string;
+  status: "error";
+  reason: ChannelFailureReason;
+  recovery: ChannelRecovery;
+  ...Closed;
+}
+
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
   @minLength(1) @maxLength(2048) url: string;
@@ -119,6 +173,10 @@ union HostInput {
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,
+  GetChannelSettingsRequest,
+  SetChannelSettingsRequest,
+  ConnectChannelRequest,
+  DisconnectChannelRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -146,6 +204,8 @@ model ThreadEventBase {
 /** `text` is the active locale tag. */
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
+model ChannelSettingsEvent { kind: "channel_settings"; ...EventBase; data: ChannelCatalogView }
+model ChannelSettingsErrorEvent { kind: "channel_settings_error"; ...SystemEventBase; data: ChannelFailure }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }
 model RemoteSettingsErrorEvent { kind: "remote_settings_error"; ...EventBase }
@@ -264,6 +324,8 @@ union HostEvent {
   Pero.Contributions.ContributionErrorEvent,
   SettingsEvent,
   WorkbenchSettingsEvent,
+  ChannelSettingsEvent,
+  ChannelSettingsErrorEvent,
   RemoteSettingsSavedEvent,
   RemoteSettingsErrorEvent,
   ReadyEvent,

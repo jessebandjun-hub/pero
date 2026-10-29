@@ -423,6 +423,8 @@
   "settings.appearance": "外观",
   "settings.all": "全部设置…",
   "error.preferences": "无法保存偏好，请检查本机运行时后重试。",
+  "error.channel": "无法保存渠道设置，请检查参数后重试。",
+  "error.channel.credential": "渠道凭据无效。请更换凭据后再连接。",
   "project.sources": "资料与来源",
   "project.execution": "执行环境",
   "project.expand": "展开",

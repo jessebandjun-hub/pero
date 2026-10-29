@@ -78,6 +78,53 @@ pub fn save_workbench(path: &Path, preferences: &pero_contracts::workbench::Work
     update(path, |value| value["workbench"] = preferences)
 }
 
+#[derive(Debug)]
+pub enum ChannelSettingsError {
+    Rejected(pero_contracts::channel::ChannelFailure),
+    Unavailable,
+}
+
+fn read_channels(path: &Path) -> io::Result<pero_contracts::channel::ChannelCatalog> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(pero_contracts::channel::ChannelCatalog::default());
+        }
+        Err(_) => return Err(io::Error::other("channel settings are unreadable")),
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| io::Error::other("channel settings are unreadable"))?;
+    if !value.is_object() {
+        return Err(io::Error::other("channel settings are unreadable"));
+    }
+    match value.get("channels") {
+        None | Some(serde_json::Value::Null) => {
+            Ok(pero_contracts::channel::ChannelCatalog::default())
+        }
+        Some(section) => pero_contracts::channel::ChannelCatalog::from_file_value(section)
+            .map_err(|_| io::Error::other("channel settings are unreadable")),
+    }
+}
+
+/// Apply a channel command. Rejected commands and unreadable files are not rewritten.
+pub fn apply_channel_settings(
+    path: &Path,
+    request: &pero_contracts::channel::ChannelSettingsRequest,
+) -> Result<pero_contracts::channel::ChannelCatalogView, ChannelSettingsError> {
+    let current = read_channels(path).map_err(|_| ChannelSettingsError::Unavailable)?;
+    match request.apply(&current) {
+        Ok(change) => {
+            if change.persists() {
+                let section = change.catalog().to_file_value();
+                update(path, |value| value["channels"] = section)
+                    .map_err(|_| ChannelSettingsError::Unavailable)?;
+            }
+            Ok(change.catalog().view())
+        }
+        Err(failure) => Err(ChannelSettingsError::Rejected(failure)),
+    }
+}
+
 pub fn save_remote_connection(
     path: &Path,
     connection: Option<&RemoteConnectionSettings>,
@@ -146,6 +193,101 @@ mod tests {
         std::fs::write(&path, "invalid").unwrap();
         assert!(save_locale(&path, "en").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn channel_settings_survive_restart_and_rejected_credentials_keep_the_file() {
+        use pero_contracts::channel::{
+            ChannelFailureReason, ChannelKind, ChannelRecovery, ChannelSettingsRequest,
+            ChannelStatus,
+        };
+        let path =
+            std::env::temp_dir().join(format!("pero-channel-settings-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"locale":"zh-CN","other":{"enabled":true}}"#).unwrap();
+        let empty = apply_channel_settings(&path, &ChannelSettingsRequest::get()).unwrap();
+        assert!(empty.channels.is_empty());
+        let credential = {
+            // "slack-bot-token" as a standard envelope, matching the domain table.
+            "c2xhY2stYm90LXRva2Vu".to_string()
+        };
+        let rejected = "cmVqZWN0Ondyb25nLXRva2Vu".to_string();
+        let failure = apply_channel_settings(
+            &path,
+            &ChannelSettingsRequest::set(
+                "slack-main",
+                ChannelKind::Slack,
+                "https://slack.example/api",
+                "T0123",
+                &rejected,
+            ),
+        )
+        .unwrap_err();
+        let ChannelSettingsError::Rejected(failure) = failure else {
+            panic!("expected rejection");
+        };
+        assert_eq!(failure.reason, ChannelFailureReason::CredentialRejected);
+        assert_eq!(failure.recovery, ChannelRecovery::ReplaceCredential);
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            apply_channel_settings(
+                &path,
+                &ChannelSettingsRequest::set(
+                    "slack-main",
+                    ChannelKind::Slack,
+                    "https://slack.example/api",
+                    "T0123",
+                    "====",
+                ),
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let saved = apply_channel_settings(
+            &path,
+            &ChannelSettingsRequest::set(
+                "slack-main",
+                ChannelKind::Slack,
+                "https://slack.example/api",
+                "工作区",
+                &credential,
+            ),
+        )
+        .unwrap();
+        assert_eq!(saved.channels[0].status, ChannelStatus::Disconnected);
+        assert_eq!(saved.channels[0].account, "工作区");
+        let connected =
+            apply_channel_settings(&path, &ChannelSettingsRequest::connect("slack-main")).unwrap();
+        assert_eq!(connected.channels[0].status, ChannelStatus::Connected);
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["locale"], "zh-CN");
+        assert_eq!(value["other"]["enabled"], true);
+        assert_eq!(value["channels"][0]["credential"], credential);
+        assert!(
+            serde_json::to_string(&connected)
+                .unwrap()
+                .contains("工作区")
+        );
+        assert!(
+            !serde_json::to_string(&connected)
+                .unwrap()
+                .contains(&credential)
+        );
+        let disconnected =
+            apply_channel_settings(&path, &ChannelSettingsRequest::disconnect("slack-main"))
+                .unwrap();
+        assert_eq!(disconnected.channels[0].status, ChannelStatus::Disconnected);
+        let reloaded = apply_channel_settings(&path, &ChannelSettingsRequest::get()).unwrap();
+        assert_eq!(reloaded, disconnected);
+        let unreadable =
+            format!(r#"{{"locale":"zh-CN","channels":{{"credential":"{credential}"}}}}"#);
+        std::fs::write(&path, &unreadable).unwrap();
+        assert!(matches!(
+            apply_channel_settings(&path, &ChannelSettingsRequest::get()),
+            Err(ChannelSettingsError::Unavailable)
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), unreadable);
         std::fs::remove_file(path).unwrap();
     }
 }

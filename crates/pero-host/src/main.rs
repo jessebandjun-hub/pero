@@ -14,6 +14,12 @@ fn emit(event: HostEvent) -> io::Result<()> {
     stdout.flush()
 }
 
+fn channel_failure_event(failure: pero_contracts::channel::ChannelFailure) -> HostEvent {
+    let mut event = HostEvent::message("channel_settings_error", None, failure.message_key());
+    event.data = serde_json::to_value(&failure).unwrap_or(serde_json::Value::Null);
+    event
+}
+
 fn main() -> io::Result<()> {
     if std::env::args().nth(1).as_deref() != Some("--stdio") {
         eprintln!("Usage: pero-host --stdio (bootstrap probe only)");
@@ -62,6 +68,41 @@ fn main() -> io::Result<()> {
                 event
             } else {
                 HostEvent::message("error", None, "error.preferences")
+            };
+            emit(event)?;
+            continue;
+        }
+        if value
+            .get("method")
+            .and_then(|method| method.as_str())
+            .is_some_and(|method| method.starts_with("settings.channel"))
+        {
+            use pero_contracts::channel::{ChannelFailure, ChannelSettingsRequest};
+            let id = value
+                .get("id")
+                .and_then(|id| id.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let event = match (
+                serde_json::from_value::<ChannelSettingsRequest>(value),
+                settings_path.as_deref(),
+            ) {
+                (Ok(request), Some(path)) => {
+                    match pero_runtime::settings::apply_channel_settings(path, &request) {
+                        Ok(view) => {
+                            let mut event = HostEvent::new("channel_settings", None, String::new());
+                            event.data = serde_json::to_value(view)?;
+                            event
+                        }
+                        Err(pero_runtime::settings::ChannelSettingsError::Rejected(failure)) => {
+                            channel_failure_event(failure)
+                        }
+                        Err(pero_runtime::settings::ChannelSettingsError::Unavailable) => {
+                            channel_failure_event(ChannelFailure::invalid(&id))
+                        }
+                    }
+                }
+                _ => channel_failure_event(ChannelFailure::invalid(&id)),
             };
             emit(event)?;
             continue;

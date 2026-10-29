@@ -23,6 +23,16 @@ const variants = (union, tag) => schema.$defs[union].oneOf.flatMap(function flat
 });
 const eventVariants = new Map(variants('HostEvent', 'kind'));
 const commandVariants = new Map(variants('HostCommand', 'action'));
+const requestVariants = new Map([
+  ['settings.locale', 'SetLocaleRequest'],
+  ['settings.remote', 'SetRemoteSettingsRequest'],
+  ['settings.workbench', 'SetWorkbenchSettingsRequest'],
+  ['settings.workbench.get', 'GetWorkbenchSettingsRequest'],
+  ['settings.channel.get', 'GetChannelSettingsRequest'],
+  ['settings.channel.set', 'SetChannelSettingsRequest'],
+  ['settings.channel.connect', 'ConnectChannelRequest'],
+  ['settings.channel.disconnect', 'DisconnectChannelRequest'],
+]);
 const explain = (name, value) => {
   if (!name) return 'no matching variant';
   const validate = validator(name);
@@ -58,8 +68,8 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
-      const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
+      const name = input.action ? commandVariants.get(input.action) : requestVariants.get(input.method) ?? 'EchoRequest';
+      const preview = input.method === 'settings.remote' || input.method === 'settings.channel.set' ? '[settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
     child.stdin.write((typeof input === 'string' ? input : JSON.stringify(input)) + '\n');
@@ -200,6 +210,85 @@ try {
   if (!replay.data.events.length) failures.push('replay after restart contained no events');
   if (replay.data.events.some(event => event.thread_id === thread || event.thread_id === 'delete-live')) failures.push('deleted thread was replayed');
   if (!replay.data.events.some(event => event.thread_id === 'settings-contract')) failures.push('deleting a thread removed unrelated history');
+  await host.stop();
+
+  const goodCredential = Buffer.from('slack-bot-token').toString('base64');
+  const badCredential = Buffer.from('reject:wrong-token').toString('base64');
+  const channelParams = (credential) => ({ method: 'settings.channel.set', id: 'slack-main', kind: 'slack', endpoint: 'https://slack.example/api', account: 'T0123', credential });
+  const exposesCredential = (value) => {
+    const text = JSON.stringify(value);
+    return text.includes(goodCredential) || text.includes(badCredential) || text.includes('slack-bot-token') || text.includes('reject:wrong-token');
+  };
+  host = startHost();
+  await host.next('ready');
+  host.send({ method: 'settings.channel.get' });
+  if (!isDeepStrictEqual((await host.next('channel_settings')).data, { channels: [] })) failures.push('Missing channels were not an empty catalog');
+  const untouched = readFileSync(env.PERO_SETTINGS_PATH);
+  host.send(channelParams(badCredential));
+  const rejectedCredential = await host.next('channel_settings_error');
+  if (rejectedCredential.message_key !== 'error.channel.credential' || rejectedCredential.data?.status !== 'error' || rejectedCredential.data?.reason !== 'credential_rejected' || rejectedCredential.data?.recovery !== 'replace_credential' || rejectedCredential.data?.id !== 'slack-main') failures.push('Rejected credential did not name recovery');
+  if (exposesCredential(rejectedCredential)) failures.push('Rejected credential was echoed');
+  if (!isDeepStrictEqual(readFileSync(env.PERO_SETTINGS_PATH), untouched)) failures.push('Rejected credential changed the settings file');
+  host.send(channelParams(goodCredential));
+  const savedChannel = await host.next('channel_settings');
+  if (savedChannel.data.channels[0].status !== 'disconnected' || savedChannel.data.channels[0].credential_configured !== true || savedChannel.data.channels[0].account !== 'T0123' || exposesCredential(savedChannel)) failures.push('Saved channel exposed a credential or the wrong status');
+  if (preferences().channels[0].credential !== goodCredential || preferences().locale !== 'zh-CN') failures.push('Host did not store the channel credential beside locale');
+  host.send({ method: 'settings.channel.connect', id: 'slack-main' });
+  if ((await host.next('channel_settings')).data.channels[0].status !== 'connected') failures.push('Connect did not record connected');
+  const connectedFile = readFileSync(env.PERO_SETTINGS_PATH);
+  host.send(channelParams(badCredential));
+  const kept = await host.next('channel_settings_error', (event) => event.data?.recovery === 'replace_credential' && event.message_key === 'error.channel.credential');
+  if (exposesCredential(kept) || !isDeepStrictEqual(readFileSync(env.PERO_SETTINGS_PATH), connectedFile)) failures.push('Bad credential replaced a connected channel or was echoed');
+  host.send({ ...channelParams(goodCredential), endpoint: 'http://slack.example/api' });
+  await host.next('channel_settings_error', (event) => event.message_key === 'error.channel' && event.data?.reason === 'invalid_parameters' && event.data?.recovery === 'edit_parameters');
+  host.send({ method: 'settings.channel.connect', id: 'missing' });
+  await host.next('channel_settings_error', (event) => event.data?.reason === 'unknown_channel' && event.data?.recovery === 'edit_parameters');
+  host.send({ ...channelParams(goodCredential), token: 'nope' }, { invalid: true });
+  await host.next('channel_settings_error', (event) => event.data?.reason === 'invalid_parameters' && event.data?.recovery === 'edit_parameters');
+  if (!isDeepStrictEqual(readFileSync(env.PERO_SETTINGS_PATH), connectedFile)) failures.push('Invalid channel command replaced a connected channel');
+  host.send({ method: 'settings.channel.disconnect', id: 'slack-main' });
+  const disconnected = await host.next('channel_settings');
+  if (disconnected.data.channels[0].status !== 'disconnected' || disconnected.data.channels[0].endpoint !== 'https://slack.example/api') failures.push('Disconnect did not keep channel parameters');
+  await host.stop();
+
+  host = startHost();
+  await host.next('ready');
+  host.send({ method: 'settings.channel.get' });
+  if (!isDeepStrictEqual((await host.next('channel_settings')).data, disconnected.data)) failures.push('Channel disconnect was lost after Host restart');
+  const seeded = preferences();
+  seeded.channels[0].credential = badCredential;
+  seeded.channels[0].status = 'disconnected';
+  writeFileSync(env.PERO_SETTINGS_PATH, JSON.stringify(seeded));
+  host.send({ method: 'settings.channel.connect', id: 'slack-main' });
+  const errored = await host.next('channel_settings');
+  if (errored.data.channels[0].status !== 'error' || errored.data.channels[0].reason !== 'credential_rejected' || errored.data.channels[0].recovery !== 'replace_credential' || errored.data.channels[0].endpoint !== 'https://slack.example/api' || exposesCredential(errored)) failures.push('Connect did not record a recoverable credential error');
+  if (preferences().channels[0].credential !== badCredential || preferences().channels[0].account !== 'T0123') failures.push('Recoverable error replaced channel parameters');
+  await host.stop();
+
+  host = startHost();
+  await host.next('ready');
+  host.send({ method: 'settings.channel.get' });
+  if (!isDeepStrictEqual((await host.next('channel_settings')).data, errored.data)) failures.push('Channel error status was lost after Host restart');
+  host.send(channelParams(goodCredential));
+  const corrected = await host.next('channel_settings');
+  if (corrected.data.channels[0].status !== 'disconnected' || corrected.data.channels[0].reason !== undefined) failures.push('Replacing the credential did not clear the error');
+  host.send({ method: 'settings.channel.connect', id: 'slack-main' });
+  if ((await host.next('channel_settings')).data.channels[0].status !== 'connected') failures.push('Corrected credential did not connect');
+  await host.stop();
+
+  host = startHost();
+  await host.next('ready');
+  host.send({ method: 'settings.channel.get' });
+  if ((await host.next('channel_settings')).data.channels[0].status !== 'connected') failures.push('Connected channel was lost after Host restart');
+  host.send({ method: 'settings.channel.disconnect', id: 'slack-main' });
+  await host.next('channel_settings', (event) => event.data.channels[0].status === 'disconnected');
+  await host.stop();
+
+  host = startHost();
+  await host.next('ready');
+  host.send({ method: 'settings.channel.get' });
+  const restored = await host.next('channel_settings');
+  if (restored.data.channels[0].status !== 'disconnected' || preferences().locale !== 'zh-CN' || !preferences().workbench) failures.push('Disconnect did not survive restart or dropped other settings');
   await host.stop();
 } catch (error) {
   failures.push(String(error));

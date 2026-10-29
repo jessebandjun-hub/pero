@@ -423,6 +423,8 @@
   "settings.appearance": "Appearance",
   "settings.all": "All settings…",
   "error.preferences": "Could not save preferences. Check the local runtime and retry.",
+  "error.channel": "Could not save the channel settings. Check the values and retry.",
+  "error.channel.credential": "The channel credential was rejected. Replace it, then connect again.",
   "project.sources": "Files & sources",
   "project.execution": "Execution environment",
   "project.expand": "Expand",
