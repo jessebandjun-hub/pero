@@ -47,6 +47,7 @@
     "test:deployment": "node tests/e2e/deployment.mjs",
     "build:product": "node scripts/build/product.mjs",
     "test:product": "node --test packages/product/*.test.ts scripts/build/app-bundle.test.mjs",
+    "test:payload": "node --test packages/product/payload.test.ts && node scripts/release/payload.mjs check --manifest packages/app-sdk/payload.json",
     "test:product:e2e": "node tests/e2e/product.mjs",
     "test:sidebar": "node tests/e2e/sidebar.mjs",
     "test:local-roadmap": "node tests/e2e/local-roadmap.mjs"

@@ -10,6 +10,10 @@ recorded in [github-connector-verification.md](github-connector-verification.md)
 Native release matrix, package checks and observed platform limits:
 [release products](release-products.md).
 
+Declared App SDK payload provenance (`npm run test:payload`): exact package
+files, source revision, npm lock digest, and archive digest. Native release
+archives are not in that file list yet: [payload provenance](payload-provenance.md).
+
 The incremental [Bazel pilot](bazel.md) covers the Go control plane and seven
 theme/protocol/locale checks. Its generators write to `bazel-bin`; the existing
 npm/Cargo commands below continue to own Rust, GPUI Wasm and Desktop verification.
