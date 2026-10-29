@@ -28,6 +28,11 @@ Agent protocol implemented by the official native Rust SDK.
 `local-probe.schema.json` retains the bootstrap echo diagnostic. An echo verifies
 transport, not Agent work. `runtime-settings.schema.json` describes persisted
 language selection (`en` / `zh-CN`), emitted before the initial `ready` event.
+`settings.plugins.get`, `settings.plugins.enable`, and `settings.plugins.disable`
+read or change an installed plugin catalog. A successful event carries the stored
+name, version, and enabled flag. A rejected change emits `plugin_settings_error`
+and leaves the file unchanged. Installing, updating, and removing packages is
+separate.
 
 The desktop child uses inherited stdio, without a network listener. The separate
 Go control plane owns remote Task/Run coordination; a persistent local Desktop

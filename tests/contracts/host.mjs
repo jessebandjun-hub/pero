@@ -23,6 +23,15 @@ const variants = (union, tag) => schema.$defs[union].oneOf.flatMap(function flat
 });
 const eventVariants = new Map(variants('HostEvent', 'kind'));
 const commandVariants = new Map(variants('HostCommand', 'action'));
+const requestVariants = new Map([
+  ['settings.locale', 'SetLocaleRequest'],
+  ['settings.remote', 'SetRemoteSettingsRequest'],
+  ['settings.workbench', 'SetWorkbenchSettingsRequest'],
+  ['settings.workbench.get', 'GetWorkbenchSettingsRequest'],
+  ['settings.plugins.get', 'GetPluginSettingsRequest'],
+  ['settings.plugins.enable', 'EnablePluginRequest'],
+  ['settings.plugins.disable', 'DisablePluginRequest'],
+]);
 const explain = (name, value) => {
   if (!name) return 'no matching variant';
   const validate = validator(name);
@@ -58,7 +67,7 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
+      const name = input.action ? commandVariants.get(input.action) : requestVariants.get(input.method) ?? (input.method ? undefined : 'EchoRequest');
       const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
@@ -184,6 +193,46 @@ try {
   host.send({action:'search_context',request_id:'thread-after-delete',kind:'thread',query:'hello'});
   const afterDelete = await host.next('context_candidates', e => e.request_id === 'thread-after-delete');
   if (afterDelete.data.some(item => item.source === thread || item.source === 'delete-live')) failures.push('deleted thread remained searchable');
+
+  host.send({method:'settings.plugins.get'});
+  if (!isDeepStrictEqual((await host.next('plugin_settings')).data, {plugins:[]})) failures.push('Missing plugins were not an empty catalog');
+  const invalidPlugins = preferences();
+  invalidPlugins.plugins = {plugins:[{name:' ', version:'1', enabled:true}]};
+  writeFileSync(env.PERO_SETTINGS_PATH, JSON.stringify(invalidPlugins));
+  host.send({method:'settings.plugins.get'});
+  if (!isDeepStrictEqual((await host.next('plugin_settings')).data, {plugins:[]})) failures.push('Invalid plugin catalog was presented as installed');
+  if (preferences().plugins.plugins[0].name !== ' ') failures.push('Reading an invalid plugin catalog rewrote it');
+  const notes = {name:'notes', version:'1.2.0', enabled:true};
+  const lint = {name:'lint', version:'0.4.1', enabled:false};
+  const seededPlugins = {plugins:[notes, lint]};
+  const seeded = preferences();
+  seeded.plugins = seededPlugins;
+  writeFileSync(env.PERO_SETTINGS_PATH, JSON.stringify(seeded));
+  host.send({method:'settings.plugins.get'});
+  if (!isDeepStrictEqual((await host.next('plugin_settings')).data, seededPlugins)) failures.push('Host did not list the stored plugins');
+  host.send({method:'settings.plugins.disable', name:'notes'});
+  const disabledPlugin = await host.next('plugin_settings');
+  if (disabledPlugin.data.plugins[0].name !== 'notes' || disabledPlugin.data.plugins[0].version !== '1.2.0' || disabledPlugin.data.plugins[0].enabled !== false || disabledPlugin.data.plugins[1].version !== '0.4.1' || disabledPlugin.data.plugins[1].enabled !== false) failures.push('Disable did not report the stored plugin');
+  if (!isDeepStrictEqual(preferences().plugins, disabledPlugin.data)) failures.push('Disable acknowledgement differed from the stored catalog');
+  host.send({method:'settings.plugins.enable', name:'lint'});
+  const enabledPlugin = await host.next('plugin_settings');
+  if (enabledPlugin.data.plugins[1].name !== 'lint' || enabledPlugin.data.plugins[1].version !== '0.4.1' || enabledPlugin.data.plugins[1].enabled !== true || enabledPlugin.data.plugins[0].enabled !== false || enabledPlugin.data.plugins[0].version !== '1.2.0') failures.push('Enable did not report the stored plugin');
+  if (!isDeepStrictEqual(preferences().plugins, enabledPlugin.data)) failures.push('Enable acknowledgement differed from the stored catalog');
+  host.send({method:'settings.plugins.disable', name:'notes'});
+  const stillDisabled = await host.next('plugin_settings');
+  if (stillDisabled.data.plugins[0].enabled !== false || stillDisabled.data.plugins[0].version !== '1.2.0') failures.push('Disabling an already disabled plugin changed its stored version or state');
+  host.send({method:'settings.plugins.disable', name:'missing'});
+  await host.next('plugin_settings_error', event => event.message_key === 'error.plugins' && event.data === undefined);
+  if (!isDeepStrictEqual(preferences().plugins, stillDisabled.data)) failures.push('Disabling a missing plugin changed the stored catalog');
+  host.send({method:'settings.plugins.enable', name:'notes', extra:true}, {invalid:true});
+  await host.next('plugin_settings_error', event => event.message_key === 'error.plugins');
+  host.send({method:'settings.plugins.disable', name:' '});
+  await host.next('plugin_settings_error', event => event.message_key === 'error.plugins');
+  if (!isDeepStrictEqual(preferences().plugins, stillDisabled.data)) failures.push('Rejected plugin changes replaced the stored catalog');
+  host.send({method:'settings.plugins.get'});
+  if (!isDeepStrictEqual((await host.next('plugin_settings')).data, preferences().plugins)) failures.push('Get after a failed change did not return the stored plugins');
+  if (preferences().locale !== 'zh-CN' || preferences().workbench.appearance !== 'dark') failures.push('Plugin save replaced other settings');
+  const effectivePlugins = structuredClone(preferences().plugins);
   await host.stop();
 
   // A fresh Host replays the journal written above.
@@ -191,6 +240,8 @@ try {
   await host.next('ready');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Workbench preferences were lost after Host restart');
+  host.send({method:'settings.plugins.get'});
+  if (!isDeepStrictEqual((await host.next('plugin_settings')).data, effectivePlugins)) failures.push('Plugin settings were lost after Host restart');
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Remote preference was lost after Host restart');
   host.send({ method: 'settings.remote', id: 'remote-disconnect', connection: null });
   await host.next('remote_settings_saved', e => e.request_id === 'remote-disconnect');

@@ -62,6 +62,29 @@ pub fn save_locale(path: &Path, locale: &str) -> io::Result<()> {
     })
 }
 
+pub fn load_plugins(path: &Path) -> pero_contracts::plugins::PluginCatalog {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| serde_json::from_value(value["plugins"].clone()).ok())
+        .filter(pero_contracts::plugins::PluginCatalog::valid)
+        .unwrap_or_default()
+}
+
+pub fn save_plugins(
+    path: &Path,
+    catalog: &pero_contracts::plugins::PluginCatalog,
+) -> io::Result<()> {
+    if !catalog.valid() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid plugin settings",
+        ));
+    }
+    let catalog = serde_json::to_value(catalog)?;
+    update(path, |value| value["plugins"] = catalog)
+}
+
 pub fn load_workbench(path: &Path) -> pero_contracts::workbench::WorkbenchPreferences {
     std::fs::read(path).ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
@@ -146,6 +169,53 @@ mod tests {
         std::fs::write(&path, "invalid").unwrap();
         assert!(save_locale(&path, "en").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn plugin_settings_round_trip_and_failed_save_keeps_the_file() {
+        use pero_contracts::plugins::{PluginCatalog, PluginRecord};
+        let path = std::env::temp_dir().join(format!(
+            "pero-plugin-settings-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, r#"{"locale":"en","other":{"enabled":true}}"#).unwrap();
+        assert!(load_plugins(&path).plugins.is_empty());
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("plugins"));
+        let stored = PluginCatalog {
+            plugins: vec![PluginRecord {
+                name: "notes".into(),
+                version: "1.2.0".into(),
+                enabled: true,
+            }],
+        };
+        save_plugins(&path, &stored).unwrap();
+        assert_eq!(load_plugins(&path), stored);
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["locale"], "en");
+        assert_eq!(value["other"]["enabled"], true);
+        let rejected = PluginCatalog {
+            plugins: vec![PluginRecord {
+                name: "notes".into(),
+                version: " ".into(),
+                enabled: false,
+            }],
+        };
+        assert!(save_plugins(&path, &rejected).is_err());
+        assert_eq!(load_plugins(&path), stored);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&path, "invalid").unwrap();
+        assert!(save_plugins(&path, &stored).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        assert_eq!(load_plugins(&path), PluginCatalog::default());
         std::fs::remove_file(path).unwrap();
     }
 }

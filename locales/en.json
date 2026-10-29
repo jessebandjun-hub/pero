@@ -423,6 +423,7 @@
   "settings.appearance": "Appearance",
   "settings.all": "All settings…",
   "error.preferences": "Could not save preferences. Check the local runtime and retry.",
+  "error.plugins": "Could not change this plugin. The installed list is unchanged.",
   "project.sources": "Files & sources",
   "project.execution": "Execution environment",
   "project.expand": "Expand",

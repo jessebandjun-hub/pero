@@ -11,6 +11,9 @@ export type HostInput =
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
+  | GetPluginSettingsRequest
+  | EnablePluginRequest
+  | DisablePluginRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
@@ -47,6 +50,8 @@ export type HostEvent =
   | ContributionErrorEvent
   | SettingsEvent
   | WorkbenchSettingsEvent
+  | PluginSettingsEvent
+  | PluginSettingsErrorEvent
   | RemoteSettingsSavedEvent
   | RemoteSettingsErrorEvent
   | ReadyEvent
@@ -165,6 +170,17 @@ export interface WorkbenchPreferences {
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+export interface GetPluginSettingsRequest {
+  method: "settings.plugins.get";
+}
+export interface EnablePluginRequest {
+  method: "settings.plugins.enable";
+  name: string;
+}
+export interface DisablePluginRequest {
+  method: "settings.plugins.disable";
+  name: string;
 }
 export interface ListAgentsCommand {
   action: "list_agents";
@@ -419,6 +435,34 @@ export interface WorkbenchSettingsEvent {
   request_id: string | null;
   text: string;
   data: WorkbenchPreferences;
+}
+export interface PluginSettingsEvent {
+  kind: "plugin_settings";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  data: PluginCatalog;
+}
+export interface PluginCatalog {
+  /**
+   * @maxItems 64
+   */
+  plugins: PluginRecord[];
+}
+export interface PluginRecord {
+  name: string;
+  version: string;
+  enabled: boolean;
+}
+/**
+ * Rejected enable or disable. Carries no catalog, so the page keeps the previous rows.
+ */
+export interface PluginSettingsErrorEvent {
+  kind: "plugin_settings_error";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  message_key?: MessageKey;
 }
 /**
  * Main-process acknowledgements contain no persisted connection payload.
