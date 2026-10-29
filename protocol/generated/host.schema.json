@@ -4103,6 +4103,22 @@
       ],
       "additionalProperties": false
     },
+    "WorkbenchLayout": {
+      "title": "WorkbenchLayout",
+      "type": "object",
+      "properties": {
+        "sidebar": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "sidebar"
+      ],
+      "additionalProperties": false,
+      "description": "Sidebar width in CSS pixels. The Host rejects values outside 200..=420."
+    },
     "WorkbenchPreferences": {
       "title": "WorkbenchPreferences",
       "type": "object",
@@ -4129,6 +4145,9 @@
             "$ref": "#/$defs/ProjectBinding"
           },
           "maxItems": 128
+        },
+        "layout": {
+          "$ref": "#/$defs/WorkbenchLayout"
         }
       },
       "required": [

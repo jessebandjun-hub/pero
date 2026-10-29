@@ -161,10 +161,17 @@ export interface WorkbenchPreferences {
    * @maxItems 128
    */
   projects: ProjectBinding[];
+  layout?: WorkbenchLayout;
 }
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+/**
+ * Sidebar width in CSS pixels. The Host rejects values outside 200..=420.
+ */
+export interface WorkbenchLayout {
+  sidebar: number;
 }
 export interface ListAgentsCommand {
   action: "list_agents";

@@ -88,14 +88,21 @@ try {
   await host.next('error');
   host.send({ method: 'settings.locale', locale: 'zh-CN' });
   await host.next('settings', (e) => e.text === 'zh-CN');
-  const workbench = {appearance:'dark',projects:[{workspace:temp,project_id:'pero'}]};
+  const workbench = {appearance:'dark',projects:[{workspace:temp,project_id:'pero'}],layout:{sidebar:320}};
   host.send({method:'settings.workbench',preferences:workbench});
   const applied = await host.next('workbench_settings');
   if (!isDeepStrictEqual(applied.data,workbench)) failures.push('Workbench preferences were not acknowledged');
   host.send({method:'settings.workbench',preferences:{...workbench,appearance:'invalid'}},{invalid:true});
   await host.next('error',event=>event.message_key==='error.preferences');
+  host.send({method:'settings.workbench',preferences:{...workbench,layout:{sidebar:10}}});
+  await host.next('error',event=>event.message_key==='error.preferences');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Invalid preferences replaced saved workbench settings');
+  host.send({method:'settings.workbench',preferences:{appearance:'dark',projects:workbench.projects}});
+  const normalized = await host.next('workbench_settings');
+  if (!isDeepStrictEqual(normalized.data,{...workbench,layout:{sidebar:260}})) failures.push('Omitted layout was not stored as the default sidebar width');
+  host.send({method:'settings.workbench',preferences:workbench});
+  await host.next('workbench_settings');
 
   host.send({ method: 'contribution', id: 'contribution-invalid', operation: 'prepare',
     task_id: 'task_contract', repository: '../invalid', parent: temp, title: 'Contract test',

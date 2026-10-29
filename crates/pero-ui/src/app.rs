@@ -37,6 +37,8 @@ pub(crate) struct Workbench {
     pub dark: bool,
     pub system_dark: bool,
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
+    /// Sidebar width following the pointer until the Host accepts it.
+    pub sidebar_drag: Option<u32>,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
     pub settings_menu_open: bool,
     pub recent_tasks: Vec<String>,
@@ -158,6 +160,7 @@ impl Workbench {
             dark,
             system_dark: dark,
             preferences: Default::default(),
+            sidebar_drag: None,
             preferences_status: Default::default(),
             settings_menu_open: false,
             recent_tasks: Vec::new(),
@@ -254,6 +257,9 @@ impl Workbench {
                     pero_contracts::workbench::WorkbenchPreferences,
                 >(event.data.clone())
                 {
+                    if self.sidebar_drag == Some(preferences.layout.sidebar) {
+                        self.sidebar_drag = None;
+                    }
                     self.preferences = preferences;
                     if self.preferences_status == crate::settings_menu::PreferenceSaveState::Saving
                     {
@@ -286,6 +292,7 @@ impl Workbench {
             "error" => {
                 if event.message_key.as_deref() == Some("error.preferences") {
                     self.preferences_status = crate::settings_menu::PreferenceSaveState::Idle;
+                    self.sidebar_drag = None;
                 }
                 self.error = Some(event.message_key.clone().unwrap_or_else(|| {
                     if event.text.is_empty() {
