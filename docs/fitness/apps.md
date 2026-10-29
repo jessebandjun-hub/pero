@@ -76,3 +76,7 @@ optional Python backend. There is no App process sandbox, Task/Run or Agent tool
 integration, remote App provisioning, marketplace/update service or packaged
 release acceptance. Virtual Cell's numerical results and source attribution
 require their own domain checks; UI and transport success are separate evidence.
+
+Restarting a backend that failed to start or exited, and the on-disk recovery
+record, are recorded in [app-recovery.md](app-recovery.md). That ROADMAP item
+stays open.

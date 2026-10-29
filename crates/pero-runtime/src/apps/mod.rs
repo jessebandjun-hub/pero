@@ -1,9 +1,11 @@
 //! Local App packages and the single owner of their installed state and backends.
 mod definition;
 mod process;
+mod recovery;
 pub use definition::{AppDefinition, AppName, AppSummary};
 use process::AppProcess;
 pub use process::BackendAccess;
+use recovery::RecoveryFailure;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -223,13 +225,25 @@ impl AppStore {
         Ok(self.list())
     }
 
+    /// Open an enabled App. A backend that failed to start or has exited is
+    /// started again against the existing `app-data/<name>` directory. Domain
+    /// files stay in place. A failed restart is written to
+    /// `app-data/<name>/.pero/recovery-error.json`; the returned error includes
+    /// that path. A later successful open removes the record.
     pub fn resolve(&mut self, name: &AppName) -> Result<AppAccess, String> {
-        let app = self.installed.get(name).ok_or("App is not installed")?;
-        if !app.enabled {
+        let (enabled, entry, definition) = {
+            let app = self.installed.get(name).ok_or("App is not installed")?;
+            (
+                app.enabled,
+                app.definition.contributes.panels[0].entry.clone(),
+                app.definition.clone(),
+            )
+        };
+        if !enabled {
             return Err("App is disabled; enable it before opening".into());
         }
         let root = self.root.join(name.as_str());
-        let entry = app.definition.contributes.panels[0].entry.clone();
+        let data = self.data.join(name.as_str());
         if self
             .processes
             .get_mut(name)
@@ -237,22 +251,39 @@ impl AppStore {
         {
             self.processes.remove(name);
         }
-        if app.definition.backend.is_some() && !self.processes.contains_key(name) {
-            self.processes.insert(
-                name.clone(),
-                AppProcess::start(&app.definition, &root, &self.data.join(name.as_str()))?,
-            );
+        if definition.backend.is_some() && !self.processes.contains_key(name) {
+            match AppProcess::start(&definition, &root, &data) {
+                Ok(process) => {
+                    self.processes.insert(name.clone(), process);
+                }
+                Err(error) => return Err(note_recovery_failure(name, &data, &error)),
+            }
         }
-        let backend = self
+        let backend = match self
             .processes
             .get_mut(name)
             .map(AppProcess::access)
-            .transpose()?;
+            .transpose()
+        {
+            Ok(backend) => backend,
+            Err(error) => {
+                self.processes.remove(name);
+                return Err(note_recovery_failure(name, &data, &error));
+            }
+        };
+        RecoveryFailure::clear(&data)?;
         Ok(AppAccess {
             root,
             entry,
             backend,
         })
+    }
+}
+
+fn note_recovery_failure(name: &AppName, data: &Path, error: &str) -> String {
+    match RecoveryFailure::store(data, name, error) {
+        Ok(path) => format!("{error}; recovery record: {}", path.display()),
+        Err(write) => format!("{error}; recovery record was not saved: {write}"),
     }
 }
 
