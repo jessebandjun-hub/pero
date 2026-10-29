@@ -23,11 +23,21 @@ App port; its existing scientific methods and source attribution stay in the App
   leaves it disabled until explicitly enabled. Installation state is durable.
   Builtins are pretrusted by the composition root: a one-time seed installs and
   enables the bundled catalog, with a durable marker so an uninstall survives
-  restart. There is no marketplace or automatic update mechanism in this slice.
+  restart. An update replaces an installed package only when the caller names
+  the target version and the local package's identity and version match. The
+  new package is staged and checked before the installed directory moves. A
+  failed update keeps the previous package and returns an error naming the App
+  and the version kept. There is no marketplace or automatic update service.
 - Domain data lives outside the package at the App root's sibling
   `app-data/<name>`. Disable stops the backend; uninstall removes the installed
-  package and retains domain data. Reinstall does not import a source package's
-  data as accepted research results.
+  package and retains domain data. An update keeps that data usable. When the
+  incoming package declares a direct migration from the installed version to
+  the target version, the Host renames domain records and writes a receipt
+  listing each record's path before and after with its SHA-256. Records the
+  migration does not name stay in place. A failed migration leaves the previous
+  records and package in place and writes `.pero-migration-error.json` in the
+  domain directory. Reinstall does not import a source package's data as
+  accepted research results.
 - The backend starts lazily when an enabled App is resolved. Python binds
   loopback port `0` and writes one readiness line, `{"port": <bound-port>}`.
   The Host waits at most ten seconds. The backend receives `PERO_APP_DATA`,

@@ -1,9 +1,10 @@
 // One real stdio wiring check for App install, startup recovery and private resolution.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import Ajv2020 from 'ajv/dist/2020.js';
 import schema from '../../protocol/generated/host.schema.json' with { type: 'json' };
@@ -68,6 +69,62 @@ try {
   const access = await host.request('resolve', { name: 'sample' });
   assert.equal(access.value.entry, 'dist/index.html');
   assert.equal(access.value.root, await realpath(resolve(temp, 'installed/sample')));
+  const dataDir = resolve(await realpath(temp), 'app-data/sample');
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(resolve(dataDir, 'draft.json'), 'cell-note');
+  const next = resolve(temp, 'sample-2');
+  await mkdir(resolve(next, 'dist'), { recursive: true });
+  await writeFile(resolve(next, 'dist/index.html'), '<h1>Sample 0.2.0</h1>');
+  await writeFile(resolve(next, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'sample', version: '0.2.0', displayName: 'Sample App',
+    contributes: { panels: [{ id: 'main', title: 'Sample', entry: 'dist/index.html' }] },
+    migrations: [{ from: '0.1.0', to: '0.2.0', rename: { 'draft.json': 'records/draft.json' } }],
+  }));
+  const updated = await host.request('update', { name: 'sample', version: '0.2.0', path: next });
+  assert.equal(updated.value[0].version, '0.2.0');
+  assert.equal(updated.value[0].enabled, true);
+  const updatedRoot = await realpath(resolve(temp, 'installed/sample'));
+  assert.match(await readFile(resolve(updatedRoot, 'dist/index.html'), 'utf8'), /0\.2\.0/);
+  assert.equal(await readFile(resolve(dataDir, 'records/draft.json'), 'utf8'), 'cell-note');
+  await assert.rejects(readFile(resolve(dataDir, 'draft.json'), 'utf8'));
+  const receipt = JSON.parse(await readFile(resolve(dataDir, '.pero-migration.json'), 'utf8'));
+  assert.equal(receipt.from, '0.1.0');
+  assert.equal(receipt.to, '0.2.0');
+  const moved = receipt.records.find(record => record.before === 'draft.json');
+  assert.equal(moved.after, 'records/draft.json');
+  assert.equal(moved.sha256, createHash('sha256').update('cell-note').digest('hex'));
+  await writeFile(resolve(dataDir, 'kept.json'), 'stay');
+  const collision = resolve(temp, 'sample-collision');
+  await mkdir(resolve(collision, 'dist'), { recursive: true });
+  await writeFile(resolve(collision, 'dist/index.html'), '<h1>Sample 0.3.0</h1>');
+  await writeFile(resolve(collision, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'sample', version: '0.3.0', displayName: 'Sample App',
+    contributes: { panels: [{ id: 'main', title: 'Sample', entry: 'dist/index.html' }] },
+    migrations: [{ from: '0.2.0', to: '0.3.0', rename: { 'records/draft.json': 'kept.json' } }],
+  }));
+  const collided = await host.request('update', { name: 'sample', version: '0.3.0', path: collision });
+  assert.equal(collided.ok, false);
+  assert.match(collided.error, /Kept installed version 0\.2\.0/);
+  assert.match(collided.error, /\.pero-migration-error\.json/);
+  assert.equal(await readFile(resolve(dataDir, 'records/draft.json'), 'utf8'), 'cell-note');
+  assert.equal(await readFile(resolve(dataDir, 'kept.json'), 'utf8'), 'stay');
+  assert.equal((await host.request('list')).value[0].version, '0.2.0');
+  const recorded = JSON.parse(await readFile(resolve(dataDir, '.pero-migration-error.json'), 'utf8'));
+  assert.equal(recorded.from, '0.2.0');
+  assert.equal(recorded.to, '0.3.0');
+  assert.match(recorded.error, /kept\.json/);
+  const broken = resolve(temp, 'sample-broken');
+  await mkdir(resolve(broken, 'dist'), { recursive: true });
+  await writeFile(resolve(broken, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'sample', version: '0.3.0', displayName: 'Sample App',
+    contributes: { panels: [{ id: 'main', title: 'Sample', entry: 'dist/index.html' }] },
+  }));
+  const failed = await host.request('update', { name: 'sample', version: '0.3.0', path: broken });
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /sample/);
+  assert.match(failed.error, /Kept installed version 0\.2\.0/);
+  assert.equal((await host.request('list')).value[0].version, '0.2.0');
+  assert.match(await readFile(resolve(updatedRoot, 'dist/index.html'), 'utf8'), /0\.2\.0/);
   assert.equal((await host.request('uninstall', { name: 'sample' })).value.length, 0);
   assert.deepEqual(failures, []);
   console.log('App stdio wiring and generated contract passed.');

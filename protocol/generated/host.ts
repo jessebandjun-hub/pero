@@ -35,9 +35,10 @@ export type ContextKind =
   "file" | "directory" | "symbol" | "thread" | "skill" | "image" | "selection" | "branch_diff" | "fetch";
 export type ThreadId = string;
 export type ContextContent = TextContextContent | ImageContextContent;
-export type AppRequest = ListApps | InstallApp | EnableApp | DisableApp | UninstallApp | ResolveApp;
+export type AppRequest = ListApps | InstallApp | UpdateApp | EnableApp | DisableApp | UninstallApp | ResolveApp;
 export type RequestId = string;
 export type AppName = string;
+export type AppVersion = string;
 export type ContributionRequest = ContributionPrepare | ContributionReview | ContributionPublish;
 export type HostEvent =
   | LocalWorkerStateEvent
@@ -262,6 +263,17 @@ export interface ListApps {
 }
 export interface InstallApp {
   action: "install";
+  path: string;
+  method: "apps";
+  id: RequestId;
+}
+/**
+ * Replace one installed package. `version` must equal that package's manifest.
+ */
+export interface UpdateApp {
+  action: "update";
+  name: AppName;
+  version: AppVersion;
   path: string;
   method: "apps";
   id: RequestId;

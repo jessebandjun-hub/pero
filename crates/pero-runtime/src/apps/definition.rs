@@ -86,6 +86,9 @@ pub struct AppDefinition {
     #[serde(default)]
     pub permissions: AppPermissions,
     pub backend: Option<AppBackend>,
+    /// Direct version steps for domain records under `app-data/<name>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub migrations: Vec<super::migration::DataMigration>,
 }
 
 /// Public catalog projection. Backend credentials and filesystem paths stay private.
@@ -98,6 +101,14 @@ pub struct AppSummary {
     pub description: String,
     pub enabled: bool,
     pub panels: Vec<AppPanel>,
+}
+
+pub(super) fn require_version(version: &str) -> Result<(), String> {
+    if version.is_empty() || version.len() > 64 {
+        Err("Invalid App version".into())
+    } else {
+        Ok(())
+    }
 }
 
 pub(super) fn relative_entry(value: &str) -> bool {
@@ -117,8 +128,7 @@ impl AppDefinition {
         if value.schema_version != 1 {
             return Err("Unsupported App schemaVersion; expected 1".into());
         }
-        if value.version.is_empty()
-            || value.version.len() > 64
+        if require_version(&value.version).is_err()
             || value.display_name.trim().is_empty()
             || value.display_name.len() > 200
             || value.description.len() > 4096
@@ -157,6 +167,7 @@ impl AppDefinition {
                 );
             }
         }
+        super::migration::validate_declarations(&value.migrations)?;
         Ok(value)
     }
 
@@ -212,6 +223,21 @@ mod tests {
                 false,
             ),
             ("extra", serde_json::json!(true), false),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","rename":{"draft.json":"records/draft.json"}}]),
+                true,
+            ),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","rename":{"../draft.json":"x.json"}}]),
+                false,
+            ),
+            (
+                "migrations",
+                serde_json::json!([{"from":"0.1.0","to":"0.2.0","script":"migrate.py"}]),
+                false,
+            ),
         ] {
             let mut candidate = valid.clone();
             candidate[key] = value;

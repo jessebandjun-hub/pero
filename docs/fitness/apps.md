@@ -74,5 +74,8 @@ for this change.
 The first slice accepts trusted local App packages with one HTML panel and an
 optional Python backend. There is no App process sandbox, Task/Run or Agent tool
 integration, remote App provisioning, marketplace/update service or packaged
-release acceptance. Virtual Cell's numerical results and source attribution
+release acceptance. Specified-version update progress is recorded in
+[apps-update.md](apps-update.md). Domain-data migration progress is recorded in
+[apps-data-migration.md](apps-data-migration.md). Those ROADMAP checkboxes stay open.
+Virtual Cell's numerical results and source attribution
 require their own domain checks; UI and transport success are separate evidence.
