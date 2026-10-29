@@ -6,6 +6,7 @@ mod agents;
 mod apps;
 mod contributions;
 mod local_worker;
+mod session_journal;
 
 fn emit(event: HostEvent) -> io::Result<()> {
     let mut stdout = io::stdout().lock();
@@ -33,6 +34,11 @@ fn main() -> io::Result<()> {
             .into()
         });
     emit(HostEvent::new("settings", None, locale))?;
+    if let Some(detail) = agents.migration_error() {
+        let mut event = HostEvent::message("error", None, "error.session_history");
+        event.text = detail.to_string();
+        emit(event)?;
+    }
     emit(HostEvent::message("ready", None, "status.host_ready"))?;
     for line in io::stdin().lock().lines() {
         let line = line?;

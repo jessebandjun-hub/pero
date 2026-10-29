@@ -73,8 +73,12 @@ Messages retain GPUI Markdown entities. Text deltas are coalesced before documen
 updates. Tools appear as compact, expandable rows; adjacent read/search/fetch
 calls share one summary. Permission requests and failure reasons stay visible.
 
-History is saved in the app's user-data directory (`sessions.jsonl`). Renderer
-reload reconstructs live conversations; restarting the app reopens history as
+History is saved in the app's user-data directory (`sessions.jsonl`). When the
+Host working directory still has a development journal at `target/sessions.jsonl`,
+startup copies records that are not already in the user-data file. The
+development file is left unchanged. If that copy fails, the Host keeps reading
+the previous journal and emits `error.session_history`. Renderer reload
+reconstructs live conversations; restarting the app reopens history as
 read-only, without automatically resuming or replaying Agent work. Temporary
 overrides: `PERO_HISTORY_PATH`, `PERO_SETTINGS_PATH`, `PERO_DESKTOP_DATA_DIR`.
 

@@ -423,6 +423,7 @@
   "settings.appearance": "Appearance",
   "settings.all": "All settings…",
   "error.preferences": "Could not save preferences. Check the local runtime and retry.",
+  "error.session_history": "Could not move session history into the user data directory. The previous session records were left in place.",
   "project.sources": "Files & sources",
   "project.execution": "Execution environment",
   "project.expand": "Expand",

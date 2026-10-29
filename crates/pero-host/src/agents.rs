@@ -20,12 +20,25 @@ pub struct Manager {
     sessions: HashMap<String, SessionHandle>,
     tx: Sender<HostEvent>,
     history: Arc<Mutex<Vec<HostEvent>>>,
+    migration_error: Option<String>,
 }
 impl Manager {
     pub fn new(root: PathBuf) -> Self {
-        let history_file = std::env::var_os("PERO_HISTORY_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| root.join("target/sessions.jsonl"));
+        let history_path = std::env::var_os("PERO_HISTORY_PATH").map(PathBuf::from);
+        let settings_path = std::env::var_os("PERO_SETTINGS_PATH").map(PathBuf::from);
+        let opened = crate::session_journal::SessionJournal::open(
+            &root,
+            history_path.as_deref(),
+            settings_path.as_deref(),
+            &crate::session_journal::user_data_dir(),
+        );
+        if let Some(error) = &opened.error {
+            eprintln!("session history: {error}");
+        }
+        let crate::session_journal::SessionJournal {
+            path: history_file,
+            error: migration_error,
+        } = opened;
         let stored = std::fs::read_to_string(&history_file)
             .unwrap_or_default()
             .lines()
@@ -94,7 +107,11 @@ impl Manager {
             sessions: HashMap::new(),
             tx,
             history,
+            migration_error,
         }
+    }
+    pub fn migration_error(&self) -> Option<&str> {
+        self.migration_error.as_deref()
     }
     fn visible_history(&self) -> Vec<HostEvent> {
         HostEvent::without_deleted_threads(&self.history.lock().unwrap())
