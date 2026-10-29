@@ -38,7 +38,11 @@ App port; its existing scientific methods and source attribution stay in the App
 - Private `apps_result` replies carry installed paths and optional backend
   URL/token only to Electron main. Main consumes every such reply rather than
   publishing it to the renderer. Public catalog events contain display metadata,
-  enable state and panel entries.
+  enable state, panel entries, and permission and environment requirements.
+  `permissions.host` is a requirement list; this host still refuses host grants,
+  so installed records publish an empty list. `environment.runtime` is `none`,
+  `python`, or `node` and matches the backend. Neither field is a credential
+  or a grant.
 - Electron serves each App at `pero-app://<name>/…`, without the workbench's
   Electron preload. Static serving is confined to the panel entry's asset
   directory. `/api/…` resolves only that enabled App's backend; main replaces

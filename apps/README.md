@@ -22,9 +22,13 @@ stdlib Python backend:
 }
 ```
 
-Omit `backend` for a frontend-only App. Unsupported fields and Host grants are
-refused. App and panel names contain lowercase letters/digits separated by
-hyphens. Entries must be relative files inside the package; symlinks are refused.
+Omit `backend` for a frontend-only App. Optional `environment.runtime` is
+`none`, `python`, or `node` and must match the backend; when omitted, the catalog
+derives it. The catalog also publishes `permissions.host`. A non-empty host
+permission list is still refused, and publishing a requirement does not grant it.
+Unsupported fields are refused. App and panel names contain lowercase
+letters/digits separated by hyphens. Entries must be relative files inside the
+package; symlinks are refused.
 Dependencies must already be bundled or available. Installation never runs an
 App's build, setup command or package manager.
 

@@ -61,6 +61,37 @@ try {
   const installed = await host.request('install', { path: source });
   assert.equal(installed.value[0].name, 'sample');
   assert.equal(installed.value[0].enabled, false);
+  assert.deepEqual(installed.value[0].permissions, { host: [] });
+  assert.deepEqual(installed.value[0].environment, { runtime: 'none' });
+  const declared = resolve(temp, 'declared');
+  await mkdir(resolve(declared, 'dist'), { recursive: true });
+  await mkdir(resolve(declared, 'backend'), { recursive: true });
+  await writeFile(resolve(declared, 'dist/index.html'), '<h1>Declared</h1>');
+  await writeFile(resolve(declared, 'backend/server.py'), '# unused\n');
+  await writeFile(resolve(declared, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'declared', version: '0.2.0', displayName: 'Declared',
+    contributes: { panels: [{ id: 'main', title: 'Declared', entry: 'dist/index.html' }] },
+    environment: { runtime: 'python' },
+    backend: { type: 'python', entry: 'backend/server.py' },
+  }));
+  const listed = await host.request('install', { path: declared });
+  const declaredRecord = listed.value.find(app => app.name === 'declared');
+  assert.deepEqual(declaredRecord.permissions, { host: [] });
+  assert.deepEqual(declaredRecord.environment, { runtime: 'python' });
+  const mismatch = resolve(temp, 'mismatch');
+  await mkdir(resolve(mismatch, 'dist'), { recursive: true });
+  await mkdir(resolve(mismatch, 'backend'), { recursive: true });
+  await writeFile(resolve(mismatch, 'dist/index.html'), '<h1>Mismatch</h1>');
+  await writeFile(resolve(mismatch, 'backend/server.py'), '# unused\n');
+  await writeFile(resolve(mismatch, 'app.json'), JSON.stringify({
+    schemaVersion: 1, name: 'mismatch', version: '0.1.0', displayName: 'Mismatch',
+    contributes: { panels: [{ id: 'main', title: 'Mismatch', entry: 'dist/index.html' }] },
+    environment: { runtime: 'node' },
+    backend: { type: 'python', entry: 'backend/server.py' },
+  }));
+  const refused = await host.request('install', { path: mismatch });
+  assert.equal(refused.ok, false);
+  assert.equal((await host.request('uninstall', { name: 'declared' })).value.length, 1);
   assert.equal((await host.request('enable', { name: 'sample' })).ok, true);
   await host.close();
   host = await launch();

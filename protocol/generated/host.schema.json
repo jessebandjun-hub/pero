@@ -166,6 +166,33 @@
       "properties": {},
       "additionalProperties": false
     },
+    "AppEnvironment": {
+      "title": "AppEnvironment",
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "none"
+            },
+            {
+              "type": "string",
+              "const": "python"
+            },
+            {
+              "type": "string",
+              "const": "node"
+            }
+          ]
+        }
+      },
+      "required": [
+        "runtime"
+      ],
+      "additionalProperties": false,
+      "description": "Runtime the App needs. `none` is a panel with no backend."
+    },
     "AppFailure": {
       "title": "AppFailure",
       "type": "object",
@@ -233,6 +260,23 @@
       ],
       "additionalProperties": false
     },
+    "AppPermissions": {
+      "title": "AppPermissions",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false,
+      "description": "Declared host permission requirements. This host grants none, so installed records publish an empty list."
+    },
     "AppRecord": {
       "title": "AppRecord",
       "type": "object",
@@ -257,6 +301,12 @@
           "items": {
             "$ref": "#/$defs/AppPanel"
           }
+        },
+        "permissions": {
+          "$ref": "#/$defs/AppPermissions"
+        },
+        "environment": {
+          "$ref": "#/$defs/AppEnvironment"
         }
       },
       "required": [
@@ -265,10 +315,12 @@
         "displayName",
         "description",
         "enabled",
-        "panels"
+        "panels",
+        "permissions",
+        "environment"
       ],
       "additionalProperties": false,
-      "description": "Public catalog: no local paths or backend credentials."
+      "description": "Public catalog: no local paths, backend credentials, or grants."
     },
     "AppRequest": {
       "title": "AppRequest",

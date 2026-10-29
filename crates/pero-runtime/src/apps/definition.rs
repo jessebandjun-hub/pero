@@ -44,11 +44,27 @@ pub struct AppPanel {
     pub entry: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AppPermissions {
     #[serde(default)]
     pub host: Vec<String>,
+}
+
+/// Runtime an App needs. This is a catalog requirement, not an interpreter path.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AppRuntime {
+    None,
+    Python,
+    Node,
+}
+
+/// Declared environment requirement published on the catalog.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AppEnvironment {
+    pub runtime: AppRuntime,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -85,10 +101,14 @@ pub struct AppDefinition {
     pub contributes: AppContributions,
     #[serde(default)]
     pub permissions: AppPermissions,
+    /// Author declaration. Absent means the catalog derives the runtime from `backend`.
+    #[serde(default)]
+    pub environment: Option<AppEnvironment>,
     pub backend: Option<AppBackend>,
 }
 
 /// Public catalog projection. Backend credentials and filesystem paths stay private.
+/// Permission and environment fields are requirements, not grants or secrets.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSummary {
@@ -98,6 +118,8 @@ pub struct AppSummary {
     pub description: String,
     pub enabled: bool,
     pub panels: Vec<AppPanel>,
+    pub permissions: AppPermissions,
+    pub environment: AppEnvironment,
 }
 
 pub(super) fn relative_entry(value: &str) -> bool {
@@ -142,6 +164,13 @@ impl AppDefinition {
                 return Err("App panel needs a title and relative HTML entry".into());
             }
         }
+        let environment = value.environment_requirement();
+        if value
+            .environment
+            .is_some_and(|declared| declared.runtime != environment.runtime)
+        {
+            return Err("App environment runtime does not match its backend".into());
+        }
         if let Some(backend) = &value.backend {
             let supported = match backend.kind {
                 BackendKind::Python => backend.entry.ends_with(".py"),
@@ -160,6 +189,18 @@ impl AppDefinition {
         Ok(value)
     }
 
+    /// Environment the catalog reports. One rule: the backend kind, checked against
+    /// an optional manifest declaration in `parse`.
+    fn environment_requirement(&self) -> AppEnvironment {
+        AppEnvironment {
+            runtime: match self.backend.as_ref().map(|backend| &backend.kind) {
+                Some(BackendKind::Python) => AppRuntime::Python,
+                Some(BackendKind::Node) => AppRuntime::Node,
+                None => AppRuntime::None,
+            },
+        }
+    }
+
     pub fn summary(&self, enabled: bool) -> AppSummary {
         AppSummary {
             name: self.name.clone(),
@@ -168,6 +209,8 @@ impl AppDefinition {
             description: self.description.clone(),
             enabled,
             panels: self.contributes.panels.clone(),
+            permissions: self.permissions.clone(),
+            environment: self.environment_requirement(),
         }
     }
 }
@@ -235,5 +278,55 @@ mod tests {
                 "{entry}"
             );
         }
+    }
+
+    #[test]
+    fn catalog_lists_permission_and_environment_requirements() {
+        let panel = serde_json::json!({"schemaVersion":1,"name":"virtual-cell","version":"0.1.0",
+            "displayName":"Virtual Cell","contributes":{"panels":[{"id":"main","title":"Cell","entry":"dist/index.html"}]}});
+        let python = serde_json::json!({"type":"python","entry":"backend/server.py"});
+        let node = serde_json::json!({"type":"node","entry":"server.mjs"});
+        for (backend, declared, runtime) in [
+            (None, None, AppRuntime::None),
+            (Some(&python), None, AppRuntime::Python),
+            (Some(&node), None, AppRuntime::Node),
+            (Some(&python), Some(AppRuntime::Python), AppRuntime::Python),
+            (Some(&node), Some(AppRuntime::Node), AppRuntime::Node),
+            (None, Some(AppRuntime::None), AppRuntime::None),
+        ] {
+            let mut candidate = panel.clone();
+            if let Some(backend) = backend {
+                candidate["backend"] = backend.clone();
+            }
+            if let Some(runtime) = declared {
+                candidate["environment"] = serde_json::json!({ "runtime": runtime });
+            }
+            let summary = AppDefinition::parse(&serde_json::to_vec(&candidate).unwrap())
+                .unwrap()
+                .summary(true);
+            assert!(summary.permissions.host.is_empty(), "{runtime:?}");
+            assert_eq!(summary.environment.runtime, runtime);
+            assert!(summary.enabled);
+        }
+        for (backend, runtime) in [
+            (None, "python"),
+            (Some(&python), "none"),
+            (Some(&python), "node"),
+            (Some(&node), "python"),
+            (None, "ruby"),
+        ] {
+            let mut candidate = panel.clone();
+            if let Some(backend) = backend {
+                candidate["backend"] = backend.clone();
+            }
+            candidate["environment"] = serde_json::json!({"runtime": runtime});
+            assert!(
+                AppDefinition::parse(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+                "{runtime}"
+            );
+        }
+        let mut extra = panel.clone();
+        extra["environment"] = serde_json::json!({"runtime":"none","path":"/tmp"});
+        assert!(AppDefinition::parse(&serde_json::to_vec(&extra).unwrap()).is_err());
     }
 }
