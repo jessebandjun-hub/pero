@@ -50,6 +50,16 @@ model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
 
+/** Provider, model, and default preset stored in the runtime settings file. */
+model ModelSettings {
+  @minLength(1) @maxLength(128) provider: string;
+  @minLength(1) @maxLength(256) `model`: string;
+  @minLength(1) @maxLength(128) default_preset: string;
+  ...Closed;
+}
+model GetModelSettingsRequest { method: "settings.model.get"; ...Closed }
+model SetModelSettingsRequest { method: "settings.model"; settings: ModelSettings; ...Closed }
+
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
   @minLength(1) @maxLength(2048) url: string;
@@ -119,6 +129,8 @@ union HostInput {
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,
+  GetModelSettingsRequest,
+  SetModelSettingsRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -146,6 +158,8 @@ model ThreadEventBase {
 /** `text` is the active locale tag. */
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
+/** `data` is the effective Provider, model, and default preset. It is absent when none is saved. */
+model ModelSettingsEvent { kind: "model_settings"; ...EventBase; data?: ModelSettings }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }
 model RemoteSettingsErrorEvent { kind: "remote_settings_error"; ...EventBase }
@@ -264,6 +278,7 @@ union HostEvent {
   Pero.Contributions.ContributionErrorEvent,
   SettingsEvent,
   WorkbenchSettingsEvent,
+  ModelSettingsEvent,
   RemoteSettingsSavedEvent,
   RemoteSettingsErrorEvent,
   ReadyEvent,

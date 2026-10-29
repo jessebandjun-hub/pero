@@ -58,7 +58,7 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
+      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method === 'settings.model.get' ? 'GetModelSettingsRequest' : input.method === 'settings.model' ? 'SetModelSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
       const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
@@ -115,6 +115,30 @@ try {
     await host.next('remote_settings_error', e => e.request_id === 'remote-invalid');
   }
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Invalid remote preference changed existing settings');
+
+  host.send({ method: 'settings.model.get' });
+  const unsetModel = await host.next('model_settings');
+  if (unsetModel.data !== undefined) failures.push('Unset model settings exposed a value');
+  const modelSettings = { provider: 'xai', model: 'grok-code-fast-1', default_preset: 'coding' };
+  host.send({ method: 'settings.model', settings: modelSettings });
+  if (!isDeepStrictEqual((await host.next('model_settings')).data, modelSettings)) failures.push('Model settings were not acknowledged');
+  host.send({ method: 'settings.model.get' });
+  if (!isDeepStrictEqual((await host.next('model_settings')).data, modelSettings)) failures.push('Model settings get did not return the effective value');
+  if (preferences().locale !== 'zh-CN' || !isDeepStrictEqual(preferences().workbench, workbench) || !isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Saving model settings replaced other preferences');
+  const beforeInvalidModel = readFileSync(env.PERO_SETTINGS_PATH, 'utf8');
+  host.send({ method: 'settings.model', settings: { provider: ' xai', model: 'grok-code-fast-1', default_preset: 'coding' } });
+  await host.next('error', event => event.message_key === 'error.preferences');
+  for (const settings of [
+    { provider: 'xai', model: 'grok-code-fast-1' },
+    { provider: 'xai', model: 'grok-code-fast-1', default_preset: 'coding', token: 'secret' },
+    { provider: '', model: 'grok-code-fast-1', default_preset: 'coding' },
+    { provider: 'x'.repeat(129), model: 'grok-code-fast-1', default_preset: 'coding' },
+  ]) {
+    host.send({ method: 'settings.model', settings }, { invalid: true });
+    await host.next('error', event => event.message_key === 'error.preferences');
+  }
+  if (readFileSync(env.PERO_SETTINGS_PATH, 'utf8') !== beforeInvalidModel) failures.push('Invalid model settings changed the settings file');
+  if (!isDeepStrictEqual(preferences().model_settings, modelSettings)) failures.push('Rejected model settings replaced the effective value');
 
   host.send({ action: 'list_agents' });
   await host.next('agents');
@@ -191,6 +215,8 @@ try {
   await host.next('ready');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Workbench preferences were lost after Host restart');
+  host.send({ method: 'settings.model.get' });
+  if (!isDeepStrictEqual((await host.next('model_settings')).data, modelSettings)) failures.push('Model settings were lost after Host restart');
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Remote preference was lost after Host restart');
   host.send({ method: 'settings.remote', id: 'remote-disconnect', connection: null });
   await host.next('remote_settings_saved', e => e.request_id === 'remote-disconnect');
