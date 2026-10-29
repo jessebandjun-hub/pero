@@ -16,7 +16,8 @@ file/workspace paths; those commands originate from native file dialogs.
 `settings.credentials.get` and `settings.credentials` read and update credential
 slots in the runtime settings file. `credential_settings` reports whether each
 slot is configured. It does not include the secret envelope. The Desktop
-renderer allowlist does not forward these methods.
+renderer forwards these methods. The main process drops secret fields before
+the event reaches the page, and it does not log the command.
 
 `session_update` carries ACP message/thought chunks, tool calls/updates and
 configuration updates. `permission` carries the ACP request plus a Host-issued
