@@ -1,4 +1,4 @@
-use crate::app::{Workbench, request_locale};
+use crate::app::{request_locale, Workbench};
 use gpui_kit::{
     component::{
         button::*,
@@ -54,6 +54,7 @@ impl Workbench {
         let connections = t("settings.connections");
         let resources = t("settings.resources");
         let agents = t("settings.agents");
+        let credentials = t("settings.credentials");
         let all = t("settings.all");
         let appearance = format!(
             "{} · {}",
@@ -118,6 +119,12 @@ impl Workbench {
                         });
                     }));
                 }
+                let target = workbench.clone();
+                menu = menu.item(PopupMenuItem::new(credentials.clone()).on_click(
+                    move |_, _, cx| {
+                        let _ = target.update(cx, |this, cx| this.open_credentials(cx));
+                    },
+                ));
                 let target = workbench.clone();
                 let saved = preferences.clone();
                 let appearance_choices = appearance_choices.clone();
@@ -203,6 +210,10 @@ impl Workbench {
                         ("settings.connections", 9),
                         ("settings.resources", 5),
                         ("settings.agents", 2),
+                        (
+                            "settings.credentials",
+                            crate::credentials_settings::CREDENTIALS_NAVIGATION,
+                        ),
                     ]
                     .into_iter()
                     .enumerate()
@@ -211,6 +222,11 @@ impl Workbench {
                             .outline()
                             .label(self.t(key))
                             .on_click(cx.listener(move |this, _, window, cx| {
+                                if navigation == crate::credentials_settings::CREDENTIALS_NAVIGATION
+                                {
+                                    this.open_credentials(cx);
+                                    return;
+                                }
                                 this.navigation = navigation;
                                 if navigation == 9 {
                                     this.open_remote_connection(window, cx);

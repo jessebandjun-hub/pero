@@ -2,10 +2,10 @@ use crate::remote_view::phase;
 use crate::{
     app::Workbench,
     components::{
-        ActionHandler, Ui,
         sidebar::{self, DeleteAffordance, SidebarAction, SidebarProps},
         task_detail::{self, SessionHeader, TaskDetailAction, TaskDetailProps},
         workspace::{self, AgentRow, WorkspaceAction},
+        ActionHandler, Ui,
     },
 };
 use gpui_kit::{prelude::*, *};
@@ -272,6 +272,7 @@ impl Workbench {
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_credential_secret(window, cx);
         self.composer_focused = self.composer.read(cx).focus_handle(cx).is_focused(window);
         self.apply_composer_context(window, cx);
         if self.input_locale != self.locale {
@@ -292,6 +293,7 @@ impl Render for Workbench {
             self.input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
             });
+            self.set_credential_placeholders(window, cx);
         }
         self.apply_local_execution(window, cx);
         let width: f32 = window.viewport_size().width.into();
@@ -366,7 +368,11 @@ impl Render for Workbench {
                     })
                     .when(self.navigation == 10, |el| {
                         el.child(self.general_settings(cx))
-                    }),
+                    })
+                    .when(
+                        self.navigation == crate::credentials_settings::CREDENTIALS_NAVIGATION,
+                        |el| el.child(self.credentials_view(cx)),
+                    ),
             )
     }
 }

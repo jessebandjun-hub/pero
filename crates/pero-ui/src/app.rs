@@ -39,6 +39,10 @@ pub(crate) struct Workbench {
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
     pub settings_menu_open: bool,
+    pub credentials: crate::credentials_settings::CredentialSettingsPage,
+    pub credential_id: Entity<InputState>,
+    pub credential_label: Entity<InputState>,
+    pub credential_secret: Entity<InputState>,
     pub recent_tasks: Vec<String>,
     pub selected_project: Option<String>,
     pub project_binding: Entity<InputState>,
@@ -143,6 +147,20 @@ impl Workbench {
             }
             cx.notify();
         }));
+        let credential_id = cx.new(|cx| InputState::new(window, cx));
+        let credential_label = cx.new(|cx| InputState::new(window, cx));
+        let credential_secret = cx.new(|cx| InputState::new(window, cx).masked(true));
+        for input in [&credential_id, &credential_label, &credential_secret] {
+            subscriptions.push(cx.subscribe(input, |this, _, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.credentials.note_edit();
+                    if this.error.as_deref() == Some("error.credentials") {
+                        this.error = None;
+                    }
+                }
+                cx.notify();
+            }));
+        }
         let remote = crate::remote::RemoteState::new(window, cx);
         let local_execution = crate::local_execution::LocalExecution::new(&locale, window, cx);
         Self {
@@ -160,6 +178,10 @@ impl Workbench {
             preferences: Default::default(),
             preferences_status: Default::default(),
             settings_menu_open: false,
+            credentials: Default::default(),
+            credential_id,
+            credential_label,
+            credential_secret,
             recent_tasks: Vec::new(),
             selected_project: None,
             project_binding,
@@ -246,6 +268,9 @@ impl Workbench {
             return;
         }
         if self.receive_chat(&event, cx) {
+            return;
+        }
+        if self.receive_credentials(&event, cx) {
             return;
         }
         match event.kind.as_str() {
@@ -452,6 +477,7 @@ pub fn snapshot() -> String {
             "renderedBytes":ui.chats.iter().map(|c|c.messages.iter().map(|m|m.view.read(cx).rendered_bytes(cx)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         });
         value["preferencesStatus"] = serde_json::json!(ui.preferences_status);
+        value["credentials"] = ui.credentials.public_state();
         value["projectBinding"] = serde_json::json!(ui.project_binding.read(cx).value().as_ref());
         value["sidebarSearch"] = serde_json::json!(ui.search.read(cx).value().as_ref());
         value["deletingChat"] = serde_json::json!(ui.deleting_chat);
