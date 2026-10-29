@@ -76,3 +76,6 @@ optional Python backend. There is no App process sandbox, Task/Run or Agent tool
 integration, remote App provisioning, marketplace/update service or packaged
 release acceptance. Virtual Cell's numerical results and source attribution
 require their own domain checks; UI and transport success are separate evidence.
+
+ROADMAP 「App 卸载」 is tracked in [app-uninstall.md](app-uninstall.md). The
+uninstall check in the table above does not mark that item complete.
