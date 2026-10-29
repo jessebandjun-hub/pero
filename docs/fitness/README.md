@@ -50,6 +50,8 @@ MCP 「工具与资源」 acceptance progress, with the ROADMAP checkbox still o
 
 Current conversation and ACP UI acceptance: [conversation-verification.md](conversation-verification.md). The bootstrap-only boundaries above are historical; actual provider replies and remaining limits are recorded separately.
 
+App catalog order, with 「App 目录」 still open: [app-catalog-order.md](app-catalog-order.md).
+
 ## Acceptance levels
 
 | Level | Evidence |

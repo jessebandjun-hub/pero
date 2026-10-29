@@ -42,9 +42,9 @@ const launch = async () => {
     const timer = setTimeout(() => reject(new Error('Host readiness timeout')), 10000); timer.unref();
   })]);
   return {
-    request: async (action, fields = {}) => {
+    request: async (action, fields = {}, validate = true) => {
       const input = { method: 'apps', id: crypto.randomUUID(), action, ...fields };
-      assert(validateInput(input), ajv.errorsText(validateInput.errors));
+      if (validate) assert(validateInput(input), ajv.errorsText(validateInput.errors));
       return new Promise((resolveReply, reject) => {
         const timer = setTimeout(() => reject(new Error(`App ${action} timeout`)), 10000);
         pending.set(input.id, result => { clearTimeout(timer); pending.delete(input.id); resolveReply(result); });
@@ -69,6 +69,38 @@ try {
   assert.equal(access.value.entry, 'dist/index.html');
   assert.equal(access.value.root, await realpath(resolve(temp, 'installed/sample')));
   assert.equal((await host.request('uninstall', { name: 'sample' })).value.length, 0);
+  const make = async name => {
+    const dir = resolve(temp, name);
+    await mkdir(resolve(dir, 'dist'), { recursive: true });
+    await writeFile(resolve(dir, 'dist/index.html'), `<h1>${name}</h1>`);
+    await writeFile(resolve(dir, 'app.json'), JSON.stringify({
+      schemaVersion: 1, name, version: '0.1.0', displayName: name,
+      contributes: { panels: [{ id: 'main', title: name, entry: 'dist/index.html' }] },
+    }));
+    return dir;
+  };
+  for (const name of ['gamma', 'alpha', 'beta']) await host.request('install', { path: await make(name) });
+  const namesOf = result => result.value.map(app => app.name);
+  assert.deepEqual(namesOf(await host.request('list')), ['alpha', 'beta', 'gamma']);
+  const ordered = await host.request('reorder', { names: ['gamma', 'alpha', 'beta'] });
+  assert.deepEqual(namesOf(ordered), ['gamma', 'alpha', 'beta']);
+  assert.equal(ordered.value.every(app => app.enabled === false), true);
+  await host.close();
+  host = await launch();
+  assert.deepEqual(namesOf(await host.request('list')), ['gamma', 'alpha', 'beta']);
+  for (const [names, error] of [
+    [['gamma', 'gamma', 'alpha'], 'Catalog order lists an App more than once'],
+    [['gamma', 'alpha', 'missing'], 'Catalog order names an App that is not installed'],
+    [['gamma', 'alpha'], 'Catalog order must list each installed App once'],
+  ]) {
+    const rejected = await host.request('reorder', { names });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.error, error);
+    assert.deepEqual(namesOf(await host.request('list')), ['gamma', 'alpha', 'beta']);
+  }
+  const malformed = await host.request('reorder', { names: ['Nope'] }, false);
+  assert.equal(malformed.ok, false);
+  assert.deepEqual(namesOf(await host.request('list')), ['gamma', 'alpha', 'beta']);
   assert.deepEqual(failures, []);
   console.log('App stdio wiring and generated contract passed.');
 } finally {

@@ -28,7 +28,9 @@ model EnableApp { action: "enable"; name: AppName; ...RequestBase; }
 model DisableApp { action: "disable"; name: AppName; ...RequestBase; }
 model UninstallApp { action: "uninstall"; name: AppName; ...RequestBase; }
 model ResolveApp { action: "resolve"; name: AppName; ...RequestBase; }
-@oneOf union AppRequest { ListApps, InstallApp, EnableApp, DisableApp, UninstallApp, ResolveApp }
+/** Replace the saved catalog order. `names` must list each installed App once. */
+model ReorderApps { action: "reorder"; names: AppName[]; ...RequestBase; }
+@oneOf union AppRequest { ListApps, InstallApp, EnableApp, DisableApp, UninstallApp, ResolveApp, ReorderApps }
 model AppSuccess { ok: true; value: AppRecord[] | AppAccess; ...AppClosed; }
 model AppFailure { ok: false; error: string; ...AppClosed; }
 @oneOf union AppResult { AppSuccess, AppFailure }

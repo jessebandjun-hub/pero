@@ -41,6 +41,11 @@ enum Request {
         id: String,
         name: AppName,
     },
+    Reorder {
+        method: Method,
+        id: String,
+        names: Vec<AppName>,
+    },
 }
 
 pub struct Apps {
@@ -103,6 +108,10 @@ impl Apps {
                 Request::Resolve { method, id, name } => {
                     let _ = (method, id);
                     serde_json::to_value(store.resolve(&name)?)
+                }
+                Request::Reorder { method, id, names } => {
+                    let _ = (method, id);
+                    serde_json::to_value(store.reorder(&names)?)
                 }
             }
             .map_err(|error| error.to_string())

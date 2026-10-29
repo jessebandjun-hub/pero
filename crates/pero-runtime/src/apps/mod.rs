@@ -1,5 +1,6 @@
-//! Local App packages and the single owner of their installed state and backends.
+//! Local App packages and the single owner of their installed state, catalog order and backends.
 mod definition;
+mod order;
 mod process;
 pub use definition::{AppDefinition, AppName, AppSummary};
 use process::AppProcess;
@@ -37,6 +38,7 @@ pub struct AppStore {
     data: PathBuf,
     installed: BTreeMap<AppName, AppInstallation>,
     processes: BTreeMap<AppName, AppProcess>,
+    saved_order: order::CatalogOrder,
 }
 
 impl AppStore {
@@ -84,19 +86,36 @@ impl AppStore {
                 },
             );
         }
+        let saved_order = load_order(&root)?;
         Ok(Self {
             root,
             data,
             installed,
             processes: BTreeMap::new(),
+            saved_order,
         })
     }
 
     pub fn list(&self) -> Vec<AppSummary> {
-        self.installed
-            .values()
-            .map(|app| app.definition.summary(app.enabled))
+        let installed: Vec<AppName> = self.installed.keys().cloned().collect();
+        self.saved_order
+            .applied_to(&installed)
+            .into_iter()
+            .map(|name| {
+                let app = &self.installed[&name];
+                app.definition.summary(app.enabled)
+            })
             .collect()
+    }
+
+    /// Replace the saved order. `requested` must name each installed App once.
+    /// A rejection leaves the saved file and the installed packages unchanged.
+    pub fn reorder(&mut self, requested: &[AppName]) -> Result<Vec<AppSummary>, String> {
+        let installed: Vec<AppName> = self.installed.keys().cloned().collect();
+        let next = order::CatalogOrder::reorder(&installed, requested)?;
+        write_order(&self.root, &next)?;
+        self.saved_order = next;
+        Ok(self.list())
     }
 
     /// Trusted composition-root catalog. Seed once; uninstall is durable across
@@ -254,6 +273,27 @@ impl AppStore {
             backend,
         })
     }
+}
+
+fn load_order(root: &Path) -> Result<order::CatalogOrder, String> {
+    let path = root.join(".catalog-order.json");
+    if !path.is_file() {
+        return Ok(order::CatalogOrder::empty());
+    }
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    // An unreadable order must not hide installed Apps. Listing falls back to
+    // name order until a valid reorder replaces the file.
+    Ok(serde_json::from_slice(&bytes).unwrap_or_else(|_| order::CatalogOrder::empty()))
+}
+
+fn write_order(root: &Path, order: &order::CatalogOrder) -> Result<(), String> {
+    let pending = root.join(".catalog-order.pending");
+    fs::write(
+        &pending,
+        serde_json::to_vec(order).map_err(|error| error.to_string())?,
+    )
+    .and_then(|_| fs::rename(&pending, root.join(".catalog-order.json")))
+    .map_err(|error| error.to_string())
 }
 
 fn write_record(root: &Path, enabled: bool) -> Result<(), String> {
