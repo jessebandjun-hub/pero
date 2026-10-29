@@ -49,6 +49,24 @@ model ProjectBinding { @minLength(1) @maxLength(4096) workspace: string; @maxLen
 model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; ...Closed }
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
+model AutomationConfig {
+  @minLength(1) @maxLength(128) id: string;
+  @minLength(1) @maxLength(128) name: string;
+  @minLength(1) @maxLength(4096) instruction: string;
+  paused: boolean;
+  ...Closed;
+}
+model AutomationCatalog { @maxItems(64) automations: AutomationConfig[]; ...Closed }
+model GetAutomationSettingsRequest { method: "settings.automation.get"; ...Closed }
+model PauseAutomationRequest { method: "settings.automation.pause"; @minLength(1) @maxLength(128) id: string; ...Closed }
+model ResumeAutomationRequest { method: "settings.automation.resume"; @minLength(1) @maxLength(128) id: string; ...Closed }
+model UpdateAutomationRequest {
+  method: "settings.automation.update";
+  @minLength(1) @maxLength(128) id: string;
+  @minLength(1) @maxLength(128) name: string;
+  @minLength(1) @maxLength(4096) instruction: string;
+  ...Closed;
+}
 
 /** Internal main-process/runtime preferences; never exposed in renderer snapshots. */
 model RemoteConnectionSettings {
@@ -119,6 +137,10 @@ union HostInput {
   SetRemoteSettingsRequest,
   GetWorkbenchSettingsRequest,
   SetWorkbenchSettingsRequest,
+  GetAutomationSettingsRequest,
+  PauseAutomationRequest,
+  ResumeAutomationRequest,
+  UpdateAutomationRequest,
   HostCommand,
   Pero.Apps.AppRequest,
   Pero.Contributions.ContributionRequest,
@@ -146,6 +168,9 @@ model ThreadEventBase {
 /** `text` is the active locale tag. */
 model SettingsEvent { kind: "settings"; ...EventBase }
 model WorkbenchSettingsEvent { kind: "workbench_settings"; ...EventBase; data: WorkbenchPreferences }
+model AutomationSettingsEvent { kind: "automation_settings"; ...EventBase; data: AutomationCatalog }
+/** Rejected pause, resume, or update. Carries no catalog, so a draft can stay. */
+model AutomationSettingsErrorEvent { kind: "automation_settings_error"; ...SystemEventBase }
 /** Main-process acknowledgements contain no persisted connection payload. */
 model RemoteSettingsSavedEvent { kind: "remote_settings_saved"; ...EventBase }
 model RemoteSettingsErrorEvent { kind: "remote_settings_error"; ...EventBase }
@@ -264,6 +289,8 @@ union HostEvent {
   Pero.Contributions.ContributionErrorEvent,
   SettingsEvent,
   WorkbenchSettingsEvent,
+  AutomationSettingsEvent,
+  AutomationSettingsErrorEvent,
   RemoteSettingsSavedEvent,
   RemoteSettingsErrorEvent,
   ReadyEvent,
