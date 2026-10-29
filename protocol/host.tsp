@@ -46,7 +46,9 @@ model SetLocaleRequest {
 }
 
 model ProjectBinding { @minLength(1) @maxLength(4096) workspace: string; @maxLength(128) project_id: string; ...Closed }
-model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; ...Closed }
+/** Docked column widths in logical pixels. Omitted until the user drags. */
+model WorkbenchLayout { sidebar: uint32; panel: uint32; custom: boolean; ...Closed }
+model WorkbenchPreferences { appearance: "light" | "dark" | "system"; @maxItems(128) projects: ProjectBinding[]; layout?: WorkbenchLayout; ...Closed }
 model GetWorkbenchSettingsRequest { method: "settings.workbench.get"; ...Closed }
 model SetWorkbenchSettingsRequest { method: "settings.workbench"; preferences: WorkbenchPreferences; ...Closed }
 

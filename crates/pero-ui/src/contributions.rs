@@ -75,16 +75,21 @@ impl Workbench {
                 .child(div().font_weight(FontWeight::BOLD).child(self.t("contribution.title")))
                 .child(Button::new("contribution-refresh").outline().small().label(self.t(if busy {"contribution.loading"} else {"remote.refresh"})).disabled(busy).on_click(cx.listener(|this,_,_,cx|this.contribution_action("refresh",cx)))))
             .child(div().flex_1().min_h_0().flex()
-                .when(!narrow || selected.is_empty(), |el| el.child(div().id("contribution-list").w(if narrow {px(800.)} else {px(320.)}).min_w_0().h_full().flex().flex_col().border_r_1().border_color(p.color("border"))
-                    .child(div().id("contribution-rows").flex_1().overflow_y_scroll().py(px(6.))
-                        .when(rows.is_empty(), |el| el.child(div().p(px(20.)).whitespace_normal().text_color(p.color("text-muted")).child(self.t(if busy {"contribution.loading"} else {"contribution.empty"}))))
-                        .children(rows.iter().enumerate().map(|(index,task)| {
-                            let id=string(task,"task_id").to_string();
-                            div().px(px(8.)).py(px(3.)).child(Button::new(("contribution-row",index)).ghost().w_full().h_auto().min_h(px(54.)).toggled(selected==id).disabled(busy)
-                                .label(format!("{}\n{} · {}",string(task,"title"),string(task,"repository"),self.contribution_status(string(task,"state"))))
-                                .on_click(cx.listener(move|this,_,_,cx|this.command(json!({"action":"remote_contribution_select","task_id":id}),cx))))
-                        })))
-                    .when(data["has_more"].as_bool().unwrap_or(false),|el|el.child(Button::new("contribution-more").ghost().small().label(self.t("remote.more")).disabled(busy).on_click(cx.listener(|this,_,_,cx|this.contribution_action("more",cx)))))))
+                .when(!narrow || selected.is_empty(), |el| {
+                    let panel = if narrow { 800. } else { self.chrome().panel as f32 };
+                    let list = div().id("contribution-list").w_full().min_w_0().h_full().flex().flex_col().border_r_1().border_color(p.color("border"))
+                        .child(div().id("contribution-rows").flex_1().overflow_y_scroll().py(px(6.))
+                            .when(rows.is_empty(), |el| el.child(div().p(px(20.)).whitespace_normal().text_color(p.color("text-muted")).child(self.t(if busy {"contribution.loading"} else {"contribution.empty"}))))
+                            .children(rows.iter().enumerate().map(|(index, task)| {
+                                let id = string(task, "task_id").to_string();
+                                div().px(px(8.)).py(px(3.)).child(Button::new(("contribution-row", index)).ghost().w_full().h_auto().min_h(px(54.)).toggled(selected == id).disabled(busy)
+                                    .label(format!("{}\n{} · {}", string(task, "title"), string(task, "repository"), self.contribution_status(string(task, "state"))))
+                                    .on_click(cx.listener(move |this, _, _, cx| this.command(json!({"action":"remote_contribution_select","task_id":id}), cx))))
+                            })))
+                        .when(data["has_more"].as_bool().unwrap_or(false), |el| el.child(Button::new("contribution-more").ghost().small().label(self.t("remote.more")).disabled(busy).on_click(cx.listener(|this, _, _, cx| this.contribution_action("more", cx)))));
+                    el.child(div().relative().w(px(panel)).h_full().flex_shrink_0().child(list)
+                        .when(!narrow, |el| el.child(self.resize_handle(pero_contracts::layout::LayoutColumn::Panel, cx).absolute().right(px(0.)).top(px(0.)).h_full().occlude())))
+                })
                 .when(!narrow || !selected.is_empty(),|el|el.child(self.contribution_detail(narrow,cx))))
     }
     fn contribution_status(&self, state: &str) -> &'static str {

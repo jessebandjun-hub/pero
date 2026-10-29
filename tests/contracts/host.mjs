@@ -96,6 +96,15 @@ try {
   await host.next('error',event=>event.message_key==='error.preferences');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Invalid preferences replaced saved workbench settings');
+  const sized = {...workbench, layout:{sidebar:300, panel:400, custom:true}};
+  host.send({method:'settings.workbench',preferences:sized});
+  if (!isDeepStrictEqual((await host.next('workbench_settings')).data, sized)) failures.push('Layout widths were not acknowledged');
+  host.send({method:'settings.workbench',preferences:{...workbench, layout:{sidebar:1, panel:400, custom:true}}});
+  await host.next('error',event=>event.message_key==='error.preferences');
+  host.send({method:'settings.workbench.get'});
+  if (!isDeepStrictEqual((await host.next('workbench_settings')).data, sized)) failures.push('Invalid layout replaced saved widths');
+  host.send({method:'settings.workbench',preferences:workbench});
+  if (!isDeepStrictEqual((await host.next('workbench_settings')).data, workbench)) failures.push('Restored layout was not acknowledged');
 
   host.send({ method: 'contribution', id: 'contribution-invalid', operation: 'prepare',
     task_id: 'task_contract', repository: '../invalid', parent: temp, title: 'Contract test',
