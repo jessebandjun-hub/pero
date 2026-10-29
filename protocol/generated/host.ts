@@ -35,7 +35,7 @@ export type ContextKind =
   "file" | "directory" | "symbol" | "thread" | "skill" | "image" | "selection" | "branch_diff" | "fetch";
 export type ThreadId = string;
 export type ContextContent = TextContextContent | ImageContextContent;
-export type AppRequest = ListApps | InstallApp | EnableApp | DisableApp | UninstallApp | ResolveApp;
+export type AppRequest = ListApps | InstallApp | EnableApp | DisableApp | UninstallApp | ResolveApp | ReorderApps;
 export type RequestId = string;
 export type AppName = string;
 export type ContributionRequest = ContributionPrepare | ContributionReview | ContributionPublish;
@@ -287,6 +287,15 @@ export interface UninstallApp {
 export interface ResolveApp {
   action: "resolve";
   name: AppName;
+  method: "apps";
+  id: RequestId;
+}
+/**
+ * Replace the saved catalog order. `names` must list each installed App once.
+ */
+export interface ReorderApps {
+  action: "reorder";
+  names: AppName[];
   method: "apps";
   id: RequestId;
 }

@@ -188,3 +188,96 @@ fn backend_lifecycle() {
         drop(store);
     }
 }
+
+fn install_named(workspace: &Path, store: &mut AppStore, name: &str) {
+    let source = workspace.join(format!("pkg-{name}"));
+    fs::create_dir_all(source.join("dist")).unwrap();
+    fs::write(source.join("dist/index.html"), name).unwrap();
+    fs::write(
+        source.join("app.json"),
+        serde_json::json!({
+            "schemaVersion": 1,
+            "name": name,
+            "version": "0.1.0",
+            "displayName": name,
+            "contributes": {"panels":[{"id":"main","title":name,"entry":"dist/index.html"}]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    store.install(&source).unwrap();
+}
+
+fn listed(store: &AppStore) -> Vec<AppName> {
+    store.list().into_iter().map(|app| app.name).collect()
+}
+
+#[test]
+fn saved_catalog_order_survives_reopen_and_a_rejected_reorder_changes_nothing() {
+    let workspace = Workspace::new();
+    let root = workspace.0.join("managed/apps");
+    let mut store = AppStore::open(root.clone()).unwrap();
+    for name in ["gamma", "alpha", "beta"] {
+        install_named(&workspace.0, &mut store, name);
+    }
+    let name_order =
+        ["alpha", "beta", "gamma"].map(|name| AppName::try_from(name.to_string()).unwrap());
+    assert_eq!(listed(&store), name_order);
+    assert!(!root.join(".catalog-order.json").exists());
+    let custom =
+        ["gamma", "alpha", "beta"].map(|name| AppName::try_from(name.to_string()).unwrap());
+    assert_eq!(
+        store
+            .reorder(&custom)
+            .unwrap()
+            .into_iter()
+            .map(|app| app.name)
+            .collect::<Vec<_>>(),
+        custom
+    );
+    let saved = fs::read(root.join(".catalog-order.json")).unwrap();
+    for requested in [
+        vec!["gamma", "gamma", "alpha"],
+        vec!["gamma", "alpha", "missing"],
+        vec!["gamma", "alpha"],
+    ] {
+        let requested: Vec<_> = requested
+            .into_iter()
+            .map(|name| AppName::try_from(name.to_string()).unwrap())
+            .collect();
+        assert!(store.reorder(&requested).is_err());
+        assert_eq!(fs::read(root.join(".catalog-order.json")).unwrap(), saved);
+        assert_eq!(listed(&store), custom);
+    }
+    drop(store);
+    let mut store = AppStore::open(root.clone()).unwrap();
+    assert_eq!(listed(&store), custom);
+    install_named(&workspace.0, &mut store, "delta");
+    let with_delta = ["gamma", "alpha", "beta", "delta"]
+        .map(|name| AppName::try_from(name.to_string()).unwrap());
+    assert_eq!(listed(&store), with_delta);
+    assert_eq!(fs::read(root.join(".catalog-order.json")).unwrap(), saved);
+    drop(store);
+    let mut store = AppStore::open(root.clone()).unwrap();
+    assert_eq!(listed(&store), with_delta);
+    store
+        .uninstall(&AppName::try_from("beta".to_string()).unwrap())
+        .unwrap();
+    let without_beta =
+        ["gamma", "alpha", "delta"].map(|name| AppName::try_from(name.to_string()).unwrap());
+    assert_eq!(listed(&store), without_beta);
+    assert_eq!(fs::read(root.join(".catalog-order.json")).unwrap(), saved);
+    drop(store);
+    let store = AppStore::open(root.clone()).unwrap();
+    assert_eq!(listed(&store), without_beta);
+    drop(store);
+    fs::write(root.join(".catalog-order.json"), b"{").unwrap();
+    let store = AppStore::open(root.clone()).unwrap();
+    let fallback =
+        ["alpha", "delta", "gamma"].map(|name| AppName::try_from(name.to_string()).unwrap());
+    assert_eq!(listed(&store), fallback);
+    assert!(root.join("alpha/app.json").is_file());
+    assert!(root.join("delta/app.json").is_file());
+    assert!(root.join("gamma/app.json").is_file());
+    assert!(!root.join("beta").exists());
+}

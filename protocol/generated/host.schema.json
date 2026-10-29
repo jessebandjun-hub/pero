@@ -290,6 +290,9 @@
         },
         {
           "$ref": "#/$defs/ResolveApp"
+        },
+        {
+          "$ref": "#/$defs/ReorderApps"
         }
       ]
     },
@@ -2940,6 +2943,37 @@
         "data"
       ],
       "additionalProperties": false
+    },
+    "ReorderApps": {
+      "title": "ReorderApps",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "reorder"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AppName"
+          }
+        },
+        "method": {
+          "type": "string",
+          "const": "apps"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "action",
+        "names",
+        "method",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "Replace the saved catalog order. `names` must list each installed App once."
     },
     "ReplayData": {
       "title": "ReplayData",

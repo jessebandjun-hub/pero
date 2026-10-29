@@ -49,6 +49,13 @@ App port; its existing scientific methods and source attribution stay in the App
   locale and active-state messages. Loading, timeout/retry, disabled and removed
   states remain visible. Disabling or removing an App disposes its frame.
   Native GPUI preview reports the Web App surface as unavailable.
+- Catalog order is a Host file, `.catalog-order.json`, at the managed App root.
+  It is separate from each installed package. `reorder` replaces that file only
+  when `names` lists each installed App once, and list replies then follow that
+  sequence across restart. A rejected reorder leaves the file and the packages
+  unchanged. Installed Apps the file does not name are listed after it, in name
+  order. Desktop does not send `reorder`. The workbench renders `apps_catalog`
+  in the order the Host already returned.
 
 The packages are trusted local executable code. Separate browser origins and a
 bounded proxy reduce the exposed UI surface; they do not sandbox Python's access
@@ -70,5 +77,6 @@ bundles, portable packaged-Desktop acceptance or production hosting.
 
 ## Verification
 
-See [App platform verification](../fitness/apps.md). Contracts are defined in
+See [App platform verification](../fitness/apps.md) and
+[catalog order](../fitness/app-catalog-order.md). Contracts are defined in
 [`protocol/apps.tsp`](../../protocol/apps.tsp), imported by the Host contract.
