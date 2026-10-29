@@ -21,6 +21,13 @@ enum Request {
         id: String,
         path: PathBuf,
     },
+    Update {
+        method: Method,
+        id: String,
+        name: AppName,
+        version: String,
+        path: PathBuf,
+    },
     Enable {
         method: Method,
         id: String,
@@ -87,6 +94,16 @@ impl Apps {
                 Request::Install { method, id, path } => {
                     let _ = (method, id);
                     serde_json::to_value(store.install(&path)?)
+                }
+                Request::Update {
+                    method,
+                    id,
+                    name,
+                    version,
+                    path,
+                } => {
+                    let _ = (method, id);
+                    serde_json::to_value(store.update(&name, &version, &path)?)
                 }
                 Request::Enable { method, id, name } => {
                     let _ = (method, id);
