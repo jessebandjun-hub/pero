@@ -48,7 +48,7 @@ Local workspace ROADMAP loading and ACP execution: [local-roadmap.md](local-road
 
 MCP 「工具与资源」 acceptance progress, with the ROADMAP checkbox still open: [mcp-tools-resources.md](mcp-tools-resources.md).
 
-Host catalog for 「插件设置页」, with the ROADMAP checkbox still open: [plugin-settings.md](plugin-settings.md).
+Desktop All settings lists the Host plugin catalog. 「插件设置页」 stays unchecked until an Electron session: [plugin-settings.md](plugin-settings.md).
 
 Current conversation and ACP UI acceptance: [conversation-verification.md](conversation-verification.md). The bootstrap-only boundaries above are historical; actual provider replies and remaining limits are recorded separately.
 

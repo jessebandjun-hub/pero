@@ -170,7 +170,7 @@ impl Workbench {
                         let _ = target.update(cx, |this, cx| {
                             this.navigation = 10;
                             this.sync_follow(cx);
-                            cx.notify();
+                            this.open_plugin_settings(cx);
                         });
                     }))
             })
@@ -185,8 +185,11 @@ impl Workbench {
     pub(crate) fn general_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palettes.get(self.dark);
         div()
+            .id("general-settings")
             .flex_1()
             .min_w_0()
+            .h_full()
+            .overflow_y_scroll()
             .p(px(24.))
             .flex()
             .flex_col()
@@ -266,5 +269,6 @@ impl Workbench {
                     ),
                 ),
             )
+            .child(self.plugin_settings_section(cx))
     }
 }

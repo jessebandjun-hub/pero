@@ -113,6 +113,13 @@ impl Workbench {
                 chat.pending_model = None;
                 chat.pending_setting = None;
             }
+            if value
+                .get("method")
+                .and_then(|method| method.as_str())
+                .is_some_and(|method| method.starts_with("settings.plugins."))
+            {
+                self.plugins.fail_send();
+            }
             self.error = Some("error.connection".into());
         }
         cx.notify();

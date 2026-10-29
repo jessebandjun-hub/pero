@@ -38,6 +38,7 @@ pub(crate) struct Workbench {
     pub system_dark: bool,
     pub preferences: pero_contracts::workbench::WorkbenchPreferences,
     pub preferences_status: crate::settings_menu::PreferenceSaveState,
+    pub(crate) plugins: crate::plugin_settings::PluginPage,
     pub settings_menu_open: bool,
     pub recent_tasks: Vec<String>,
     pub selected_project: Option<String>,
@@ -159,6 +160,7 @@ impl Workbench {
             system_dark: dark,
             preferences: Default::default(),
             preferences_status: Default::default(),
+            plugins: Default::default(),
             settings_menu_open: false,
             recent_tasks: Vec::new(),
             selected_project: None,
@@ -246,6 +248,9 @@ impl Workbench {
             return;
         }
         if self.receive_chat(&event, cx) {
+            return;
+        }
+        if self.receive_plugin_settings(&event, cx) {
             return;
         }
         match event.kind.as_str() {
@@ -452,6 +457,7 @@ pub fn snapshot() -> String {
             "renderedBytes":ui.chats.iter().map(|c|c.messages.iter().map(|m|m.view.read(cx).rendered_bytes(cx)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         });
         value["preferencesStatus"] = serde_json::json!(ui.preferences_status);
+        value["pluginSettings"] = ui.plugins.snapshot();
         value["projectBinding"] = serde_json::json!(ui.project_binding.read(cx).value().as_ref());
         value["sidebarSearch"] = serde_json::json!(ui.search.read(cx).value().as_ref());
         value["deletingChat"] = serde_json::json!(ui.deleting_chat);
