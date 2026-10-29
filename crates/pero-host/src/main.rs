@@ -66,6 +66,28 @@ fn main() -> io::Result<()> {
             emit(event)?;
             continue;
         }
+        if value
+            .get("method")
+            .and_then(|v| v.as_str())
+            .is_some_and(|method| method.starts_with("settings.credentials"))
+        {
+            use pero_contracts::credentials::CredentialSettingsRequest;
+            let view = serde_json::from_value::<CredentialSettingsRequest>(value)
+                .ok()
+                .zip(settings_path.as_deref())
+                .and_then(|(request, path)| {
+                    pero_runtime::settings::apply_credential_settings(path, &request).ok()
+                });
+            let event = if let Some(view) = view {
+                let mut event = HostEvent::new("credential_settings", None, String::new());
+                event.data = serde_json::to_value(view)?;
+                event
+            } else {
+                HostEvent::message("error", None, "error.credentials")
+            };
+            emit(event)?;
+            continue;
+        }
         if value.get("method").and_then(|v| v.as_str()) == Some("contribution") {
             contributions::dispatch(value);
             continue;

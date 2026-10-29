@@ -10,6 +10,7 @@ import { RemoteAdapter, type StoredRemoteConnection } from './remote';
 import { DesktopApps } from './apps';
 import { DesktopContributions } from './contributions';
 import { LocalExecutionController } from './local-execution';
+import { acceptedSessionCommand, presentCredentialEvent } from './session-command';
 
 // Register before ready so macOS cannot deliver the callback before the listener.
 // pero://connect/ completes sign-in; pero://tasks/<id> opens a Cloud task from the task square.
@@ -40,8 +41,9 @@ let locale: Locale = 'en';
 const t = (key: MessageKey) => translate(locale, key);
 let localExecution: LocalExecutionController | undefined;
 const send = (event: object) => {
-  if ((event as {kind?: string}).kind === 'remote_state') localExecution?.sync();
-  if (window && !window.isDestroyed()) window.webContents.send('pero:event', event);
+  const outgoing = presentCredentialEvent(event);
+  if ((outgoing as {kind?: string}).kind === 'remote_state') localExecution?.sync();
+  if (window && !window.isDestroyed()) window.webContents.send('pero:event', outgoing);
 };
 const apps = new DesktopApps(request => {
   if (!ready || !host?.stdin.writable) throw new Error('The local runtime is unavailable');
@@ -206,7 +208,6 @@ app.whenReady().then(async () => {
     trusted(sender);
     if (!ready || !command || typeof command !== 'object') throw new Error('Invalid session command');
     const action = (command as { action?: string }).action;
-    const method = (command as { method?: string }).method;
     if (action?.startsWith('local_worker_')) {
       if (!['local_worker_init','local_worker_enroll','local_worker_resume','local_worker_disable','local_worker_skip'].includes(action)) throw new Error('Invalid local execution action');
       await localExecution!.command(command);return;
@@ -216,7 +217,7 @@ app.whenReady().then(async () => {
       if (!selected.canceled && selected.filePaths[0]) send({version:1,kind:'local_worker_workspace',request_id:null,text:'',data:{path:realpathSync(selected.filePaths[0])}});
       return;
     }
-    if ((!['list_agents','workspace','load_roadmap','new_session','prompt','cancel','permission','model','configure','authenticate','close','delete','search_context','resolve_context','attach_files'].includes(action || '') && !['settings.workbench', 'settings.workbench.get'].includes(method || '')) || JSON.stringify(command).length > 16_000_000) throw new Error('Invalid session command');
+    if (!acceptedSessionCommand(command) || JSON.stringify(command).length > 16_000_000) throw new Error('Invalid session command');
     host.stdin.write(JSON.stringify(command) + '\n');
   });
   ipcMain.handle('pero:workspace', async (sender) => {

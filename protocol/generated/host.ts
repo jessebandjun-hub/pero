@@ -11,10 +11,21 @@ export type HostInput =
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
+  | GetCredentialSettingsRequest
+  | ReplaceCredentialRequest
+  | RemoveCredentialRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
 export type LocalWorkerRequest = LocalWorkerStartCommand | LocalWorkerStopCommand | LocalWorkerGetCommand;
+/**
+ * Stable credential slot id. The secret envelope is not part of the id.
+ */
+export type CredentialId = string;
+/**
+ * Opaque secret envelope. Host events must not carry this value.
+ */
+export type CredentialSecret = string;
 export type HostCommand =
   | ListAgentsCommand
   | WorkspaceCommand
@@ -47,6 +58,7 @@ export type HostEvent =
   | ContributionErrorEvent
   | SettingsEvent
   | WorkbenchSettingsEvent
+  | CredentialSettingsEvent
   | RemoteSettingsSavedEvent
   | RemoteSettingsErrorEvent
   | ReadyEvent
@@ -165,6 +177,21 @@ export interface WorkbenchPreferences {
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+export interface GetCredentialSettingsRequest {
+  method: "settings.credentials.get";
+}
+export interface ReplaceCredentialRequest {
+  method: "settings.credentials";
+  operation: "replace";
+  id: CredentialId;
+  label: string;
+  secret: CredentialSecret;
+}
+export interface RemoveCredentialRequest {
+  method: "settings.credentials";
+  operation: "remove";
+  id: CredentialId;
 }
 export interface ListAgentsCommand {
   action: "list_agents";
@@ -419,6 +446,31 @@ export interface WorkbenchSettingsEvent {
   request_id: string | null;
   text: string;
   data: WorkbenchPreferences;
+}
+/**
+ * Saved credential connection status. The payload has no secret envelope.
+ */
+export interface CredentialSettingsEvent {
+  kind: "credential_settings";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  data: CredentialSettingsView;
+}
+export interface CredentialSettingsView {
+  /**
+   * @maxItems 32
+   */
+  credentials: CredentialView[];
+}
+/**
+ * Public credential slot. Connection status is `configured` when an envelope is stored.
+ */
+export interface CredentialView {
+  id: CredentialId;
+  label: string;
+  configured: true;
+  status: "configured";
 }
 /**
  * Main-process acknowledgements contain no persisted connection payload.
