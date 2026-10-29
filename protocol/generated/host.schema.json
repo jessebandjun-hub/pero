@@ -1690,6 +1690,20 @@
       ],
       "additionalProperties": false
     },
+    "GetLocaleRequest": {
+      "title": "GetLocaleRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.locale.get"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
     "GetWorkbenchSettingsRequest": {
       "title": "GetWorkbenchSettingsRequest",
       "type": "object",
@@ -1884,6 +1898,9 @@
         },
         {
           "$ref": "#/$defs/SetLocaleRequest"
+        },
+        {
+          "$ref": "#/$defs/GetLocaleRequest"
         },
         {
           "$ref": "#/$defs/SetRemoteSettingsRequest"

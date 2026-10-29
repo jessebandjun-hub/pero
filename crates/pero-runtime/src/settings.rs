@@ -57,8 +57,11 @@ fn update(path: &Path, edit: impl FnOnce(&mut serde_json::Value)) -> io::Result<
 }
 
 pub fn save_locale(path: &Path, locale: &str) -> io::Result<()> {
+    let locale = pero_contracts::i18n::LocalePreference::parse(locale)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid locale"))?;
+    let tag = locale.as_str();
     update(path, |value| {
-        value["locale"] = pero_contracts::i18n::normalize(locale).into()
+        value["locale"] = tag.into();
     })
 }
 
@@ -143,6 +146,16 @@ mod tests {
                 0o600
             );
         }
+        let before = std::fs::read(&path).unwrap();
+        for tag in ["fr", "zh-cn", "zh_CN", "en-US", ""] {
+            assert!(save_locale(&path, tag).is_err(), "{tag}");
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let missing =
+            std::env::temp_dir().join(format!("pero-locale-missing-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&missing);
+        assert!(save_locale(&missing, "fr").is_err());
+        assert!(!missing.exists());
         std::fs::write(&path, "invalid").unwrap();
         assert!(save_locale(&path, "en").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");

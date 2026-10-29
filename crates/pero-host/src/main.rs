@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
             )
             .into()
         });
-    emit(HostEvent::new("settings", None, locale))?;
+    emit(HostEvent::new("settings", None, locale.clone()))?;
     emit(HostEvent::message("ready", None, "status.host_ready"))?;
     for line in io::stdin().lock().lines() {
         let line = line?;
@@ -114,19 +114,32 @@ fn main() -> io::Result<()> {
             ))?;
             continue;
         }
-        if value.get("method").and_then(|v| v.as_str()) == Some("settings.locale") {
-            let locale = value
-                .get("locale")
-                .and_then(|v| v.as_str())
-                .filter(|v| matches!(*v, "en" | "zh-CN"))
-                .filter(|_| value.as_object().is_some_and(|object| object.len() == 2));
-            let event = match (locale, settings_path.as_deref()) {
-                (Some(locale), Some(path))
-                    if pero_runtime::settings::save_locale(path, locale).is_ok() =>
-                {
-                    HostEvent::new("settings", None, locale.into())
+        if value
+            .get("method")
+            .and_then(|v| v.as_str())
+            .is_some_and(|method| matches!(method, "settings.locale" | "settings.locale.get"))
+        {
+            use pero_contracts::i18n::LocaleSettingsRequest;
+            let event = match LocaleSettingsRequest::parse(&value) {
+                Some(LocaleSettingsRequest::Get) => HostEvent::new(
+                    "settings",
+                    None,
+                    settings_path
+                        .as_deref()
+                        .and_then(pero_runtime::settings::load_locale)
+                        .unwrap_or_else(|| locale.clone()),
+                ),
+                Some(LocaleSettingsRequest::Set { locale: requested }) => {
+                    match settings_path.as_deref() {
+                        Some(path)
+                            if pero_runtime::settings::save_locale(path, &requested).is_ok() =>
+                        {
+                            HostEvent::new("settings", None, requested)
+                        }
+                        _ => HostEvent::message("error", None, "error.settings"),
+                    }
                 }
-                _ => HostEvent::message("error", None, "error.settings"),
+                None => HostEvent::message("error", None, "error.settings"),
             };
             emit(event)?;
             continue;

@@ -58,7 +58,7 @@ function startHost() {
   });
   const send = (input, { invalid = false } = {}) => {
     if (!invalid && !validInput(input)) {
-      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
+      const name = input.action ? commandVariants.get(input.action) : input.method === 'settings.locale.get' ? 'GetLocaleRequest' : input.method === 'settings.remote' ? 'SetRemoteSettingsRequest' : input.method ? 'SetLocaleRequest' : 'EchoRequest';
       const preview = input.method === 'settings.remote' ? '[remote settings redacted]' : JSON.stringify(input);
       failures.push(`input ${preview}: ${explain(name, input)}`);
     }
@@ -79,7 +79,7 @@ function startHost() {
 
 try {
   let host = startHost();
-  await host.next('settings');
+  if ((await host.next('settings')).text !== 'en') failures.push('Host did not report the starting locale');
   await host.next('ready');
 
   host.send({ id: 'probe-1', text: '你好，Pero' });
@@ -87,7 +87,20 @@ try {
   host.send('not json', { invalid: true });
   await host.next('error');
   host.send({ method: 'settings.locale', locale: 'zh-CN' });
-  await host.next('settings', (e) => e.text === 'zh-CN');
+  if ((await host.next('settings')).text !== 'zh-CN') failures.push('Host did not apply the saved locale');
+  host.send({ method: 'settings.locale.get' });
+  if ((await host.next('settings')).text !== 'zh-CN') failures.push('Locale get did not return the saved preference');
+  const savedLocale = readFileSync(env.PERO_SETTINGS_PATH);
+  for (const input of [
+    { method: 'settings.locale', locale: 'fr' },
+    { method: 'settings.locale', locale: 'zh-cn' },
+    { method: 'settings.locale', locale: 'en', extra: true },
+    { method: 'settings.locale.get', extra: true },
+  ]) {
+    host.send(input, { invalid: true });
+    await host.next('error', (event) => event.message_key === 'error.settings');
+  }
+  if (!readFileSync(env.PERO_SETTINGS_PATH).equals(savedLocale)) failures.push('Invalid locale changed the settings file');
   const workbench = {appearance:'dark',projects:[{workspace:temp,project_id:'pero'}]};
   host.send({method:'settings.workbench',preferences:workbench});
   const applied = await host.next('workbench_settings');
@@ -188,7 +201,10 @@ try {
 
   // A fresh Host replays the journal written above.
   host = startHost();
+  if ((await host.next('settings')).text !== 'zh-CN') failures.push('Locale preference was lost after Host restart');
   await host.next('ready');
+  host.send({ method: 'settings.locale.get' });
+  if ((await host.next('settings')).text !== 'zh-CN') failures.push('Locale get after restart did not return the saved preference');
   host.send({method:'settings.workbench.get'});
   if (!isDeepStrictEqual((await host.next('workbench_settings')).data,workbench)) failures.push('Workbench preferences were lost after Host restart');
   if (!isDeepStrictEqual(preferences().remote_connection, storedConnection)) failures.push('Remote preference was lost after Host restart');
