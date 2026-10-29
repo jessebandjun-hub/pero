@@ -25,3 +25,13 @@ go_test(
     ],
     embed = [":llm"],
 )
+
+# Production sources for the architecture import gate.
+filegroup(
+    name = "production_go_sources",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    visibility = ["//architecture:__pkg__"],
+)
