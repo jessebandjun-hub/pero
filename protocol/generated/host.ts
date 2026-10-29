@@ -11,6 +11,11 @@ export type HostInput =
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
+  | GetAutomationSettingsRequest
+  | PauseAutomationRequest
+  | ResumeAutomationRequest
+  | UpdateAutomationRequest
+  | CreateAutomationRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
@@ -47,6 +52,8 @@ export type HostEvent =
   | ContributionErrorEvent
   | SettingsEvent
   | WorkbenchSettingsEvent
+  | AutomationSettingsEvent
+  | AutomationSettingsErrorEvent
   | RemoteSettingsSavedEvent
   | RemoteSettingsErrorEvent
   | ReadyEvent
@@ -165,6 +172,29 @@ export interface WorkbenchPreferences {
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+export interface GetAutomationSettingsRequest {
+  method: "settings.automation.get";
+}
+export interface PauseAutomationRequest {
+  method: "settings.automation.pause";
+  id: string;
+}
+export interface ResumeAutomationRequest {
+  method: "settings.automation.resume";
+  id: string;
+}
+export interface UpdateAutomationRequest {
+  method: "settings.automation.update";
+  id: string;
+  name: string;
+  instruction: string;
+}
+export interface CreateAutomationRequest {
+  method: "settings.automation.create";
+  id: string;
+  name: string;
+  instruction: string;
 }
 export interface ListAgentsCommand {
   action: "list_agents";
@@ -419,6 +449,35 @@ export interface WorkbenchSettingsEvent {
   request_id: string | null;
   text: string;
   data: WorkbenchPreferences;
+}
+export interface AutomationSettingsEvent {
+  kind: "automation_settings";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  data: AutomationCatalog;
+}
+export interface AutomationCatalog {
+  /**
+   * @maxItems 64
+   */
+  automations: AutomationConfig[];
+}
+export interface AutomationConfig {
+  id: string;
+  name: string;
+  instruction: string;
+  paused: boolean;
+}
+/**
+ * Rejected pause, resume, update, or create. Carries no catalog, so a draft can stay.
+ */
+export interface AutomationSettingsErrorEvent {
+  kind: "automation_settings_error";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  message_key?: MessageKey;
 }
 /**
  * Main-process acknowledgements contain no persisted connection payload.
