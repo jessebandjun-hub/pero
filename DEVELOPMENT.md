@@ -55,6 +55,7 @@ npm run test:contracts           # Host stdio output against the JSON Schema
 npm run test:product             # Product model invariants
 # npm run test:product:e2e        # real packaged Electron; requires a disposable built package
 go -C server test -race ./...    # control plane; PostgreSQL cases need PERO_TEST_DATABASE_URL
+bash scripts/check/standalone-go-module.sh  # harness/go tests outside this checkout
 ```
 
 CI runs these on Linux, Windows, and macOS, plus Bazel `//:checks`. Electron, PostgreSQL, live GitHub, and real-model suites are opt-in. Every suite and what it proves is listed in [docs/fitness](docs/fitness/README.md).

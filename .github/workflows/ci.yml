@@ -99,9 +99,12 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: harness/go/go.sum
-      - name: Harness race tests
-        working-directory: harness/go
-        run: go test -race -count=1 ./...
+      # The copy sits outside the checkout. GOWORK=off on this job does not
+      # hide parent files from an in-tree test, so the race suite runs detached.
+      - name: Standalone module gate
+        run: bash scripts/check/standalone-go-module.sh --self-test
+      - name: Detached harness race tests
+        run: bash scripts/check/standalone-go-module.sh --race
       - name: Harness vet and build
         working-directory: harness/go
         run: |
