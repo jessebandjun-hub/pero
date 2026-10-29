@@ -11,10 +11,15 @@ export type HostInput =
   | SetRemoteSettingsRequest
   | GetWorkbenchSettingsRequest
   | SetWorkbenchSettingsRequest
+  | GetChannelSettingsRequest
+  | SetChannelSettingsRequest
+  | ConnectChannelRequest
+  | DisconnectChannelRequest
   | HostCommand
   | AppRequest
   | ContributionRequest;
 export type LocalWorkerRequest = LocalWorkerStartCommand | LocalWorkerStopCommand | LocalWorkerGetCommand;
+export type ChannelKind = "wechat" | "wecom" | "feishu" | "dingtalk" | "slack" | "teams" | "discord";
 export type HostCommand =
   | ListAgentsCommand
   | WorkspaceCommand
@@ -47,6 +52,8 @@ export type HostEvent =
   | ContributionErrorEvent
   | SettingsEvent
   | WorkbenchSettingsEvent
+  | ChannelSettingsEvent
+  | ChannelSettingsErrorEvent
   | RemoteSettingsSavedEvent
   | RemoteSettingsErrorEvent
   | ReadyEvent
@@ -78,10 +85,13 @@ export type HostEvent =
   | PromptQueuedEvent
   | CommandRejectedEvent
   | TurnStartedEvent;
+export type ChannelView = ChannelConnectedView | ChannelDisconnectedView | ChannelErrorView;
 /**
  * Catalog key resolved by the UI from locales/*.json.
  */
 export type MessageKey = string;
+export type ChannelFailureReason = "credential_rejected" | "invalid_parameters" | "unknown_channel";
+export type ChannelRecovery = "replace_credential" | "edit_parameters";
 /**
  * Events persisted to the session journal and replayed to the UI.
  */
@@ -165,6 +175,25 @@ export interface WorkbenchPreferences {
 export interface ProjectBinding {
   workspace: string;
   project_id: string;
+}
+export interface GetChannelSettingsRequest {
+  method: "settings.channel.get";
+}
+export interface SetChannelSettingsRequest {
+  method: "settings.channel.set";
+  id: string;
+  kind: ChannelKind;
+  endpoint: string;
+  account: string;
+  credential: string;
+}
+export interface ConnectChannelRequest {
+  method: "settings.channel.connect";
+  id: string;
+}
+export interface DisconnectChannelRequest {
+  method: "settings.channel.disconnect";
+  id: string;
 }
 export interface ListAgentsCommand {
   action: "list_agents";
@@ -419,6 +448,184 @@ export interface WorkbenchSettingsEvent {
   request_id: string | null;
   text: string;
   data: WorkbenchPreferences;
+}
+export interface ChannelSettingsEvent {
+  kind: "channel_settings";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  data: ChannelCatalogView;
+}
+export interface ChannelCatalogView {
+  /**
+   * @maxItems 16
+   */
+  channels:
+    | []
+    | [ChannelView]
+    | [ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView, ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView]
+    | [ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView, ChannelView]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ]
+    | [
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView,
+        ChannelView
+      ];
+}
+export interface ChannelConnectedView {
+  id: string;
+  kind: ChannelKind;
+  endpoint: string;
+  account: string;
+  credential_configured: true;
+  status: "connected";
+}
+export interface ChannelDisconnectedView {
+  id: string;
+  kind: ChannelKind;
+  endpoint: string;
+  account: string;
+  credential_configured: true;
+  status: "disconnected";
+}
+export interface ChannelErrorView {
+  id: string;
+  kind: ChannelKind;
+  endpoint: string;
+  account: string;
+  credential_configured: true;
+  status: "error";
+  reason: "credential_rejected";
+  recovery: "replace_credential";
+}
+export interface ChannelSettingsErrorEvent {
+  kind: "channel_settings_error";
+  version: 1;
+  request_id: string | null;
+  text: string;
+  message_key?: MessageKey;
+  data: ChannelFailure;
+}
+export interface ChannelFailure {
+  id: string;
+  status: "error";
+  reason: ChannelFailureReason;
+  recovery: ChannelRecovery;
 }
 /**
  * Main-process acknowledgements contain no persisted connection payload.

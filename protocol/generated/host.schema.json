@@ -592,6 +592,306 @@
       ],
       "additionalProperties": false
     },
+    "ChannelCatalogView": {
+      "title": "ChannelCatalogView",
+      "type": "object",
+      "properties": {
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChannelView"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "channels"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelConnectedView": {
+      "title": "ChannelConnectedView",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "$ref": "#/$defs/ChannelKind"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "credential_configured": {
+          "type": "boolean",
+          "const": true
+        },
+        "status": {
+          "type": "string",
+          "const": "connected"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "endpoint",
+        "account",
+        "credential_configured",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelDisconnectedView": {
+      "title": "ChannelDisconnectedView",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "$ref": "#/$defs/ChannelKind"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "credential_configured": {
+          "type": "boolean",
+          "const": true
+        },
+        "status": {
+          "type": "string",
+          "const": "disconnected"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "endpoint",
+        "account",
+        "credential_configured",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelErrorView": {
+      "title": "ChannelErrorView",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "$ref": "#/$defs/ChannelKind"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "credential_configured": {
+          "type": "boolean",
+          "const": true
+        },
+        "status": {
+          "type": "string",
+          "const": "error"
+        },
+        "reason": {
+          "type": "string",
+          "const": "credential_rejected"
+        },
+        "recovery": {
+          "type": "string",
+          "const": "replace_credential"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "endpoint",
+        "account",
+        "credential_configured",
+        "status",
+        "reason",
+        "recovery"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelFailure": {
+      "title": "ChannelFailure",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "const": "error"
+        },
+        "reason": {
+          "$ref": "#/$defs/ChannelFailureReason"
+        },
+        "recovery": {
+          "$ref": "#/$defs/ChannelRecovery"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "reason",
+        "recovery"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelFailureReason": {
+      "title": "ChannelFailureReason",
+      "type": "string",
+      "enum": [
+        "credential_rejected",
+        "invalid_parameters",
+        "unknown_channel"
+      ]
+    },
+    "ChannelKind": {
+      "title": "ChannelKind",
+      "type": "string",
+      "enum": [
+        "wechat",
+        "wecom",
+        "feishu",
+        "dingtalk",
+        "slack",
+        "teams",
+        "discord"
+      ]
+    },
+    "ChannelRecovery": {
+      "title": "ChannelRecovery",
+      "type": "string",
+      "enum": [
+        "replace_credential",
+        "edit_parameters"
+      ]
+    },
+    "ChannelSettingsErrorEvent": {
+      "title": "ChannelSettingsErrorEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "channel_settings_error"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "message_key": {
+          "$ref": "#/$defs/MessageKey"
+        },
+        "data": {
+          "$ref": "#/$defs/ChannelFailure"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelSettingsEvent": {
+      "title": "ChannelSettingsEvent",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "channel_settings"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ChannelCatalogView"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "request_id",
+        "text",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "ChannelView": {
+      "title": "ChannelView",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChannelConnectedView"
+        },
+        {
+          "$ref": "#/$defs/ChannelDisconnectedView"
+        },
+        {
+          "$ref": "#/$defs/ChannelErrorView"
+        }
+      ]
+    },
     "CloseCommand": {
       "title": "CloseCommand",
       "type": "object",
@@ -738,6 +1038,26 @@
         "thread_id",
         "config_id",
         "value"
+      ],
+      "additionalProperties": false
+    },
+    "ConnectChannelRequest": {
+      "title": "ConnectChannelRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.channel.connect"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "method",
+        "id"
       ],
       "additionalProperties": false
     },
@@ -1503,6 +1823,26 @@
       ],
       "additionalProperties": false
     },
+    "DisconnectChannelRequest": {
+      "title": "DisconnectChannelRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.channel.disconnect"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "method",
+        "id"
+      ],
+      "additionalProperties": false
+    },
     "DisconnectedEvent": {
       "title": "DisconnectedEvent",
       "type": "object",
@@ -1690,6 +2030,20 @@
       ],
       "additionalProperties": false
     },
+    "GetChannelSettingsRequest": {
+      "title": "GetChannelSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.channel.get"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
     "GetWorkbenchSettingsRequest": {
       "title": "GetWorkbenchSettingsRequest",
       "type": "object",
@@ -1777,6 +2131,12 @@
         },
         {
           "$ref": "#/$defs/WorkbenchSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/ChannelSettingsEvent"
+        },
+        {
+          "$ref": "#/$defs/ChannelSettingsErrorEvent"
         },
         {
           "$ref": "#/$defs/RemoteSettingsSavedEvent"
@@ -1893,6 +2253,18 @@
         },
         {
           "$ref": "#/$defs/SetWorkbenchSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/GetChannelSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/SetChannelSettingsRequest"
+        },
+        {
+          "$ref": "#/$defs/ConnectChannelRequest"
+        },
+        {
+          "$ref": "#/$defs/DisconnectChannelRequest"
         },
         {
           "$ref": "#/$defs/HostCommand"
@@ -3680,6 +4052,48 @@
       ],
       "additionalProperties": false,
       "description": "`data` is the ACP SessionUpdate."
+    },
+    "SetChannelSettingsRequest": {
+      "title": "SetChannelSettingsRequest",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "settings.channel.set"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "$ref": "#/$defs/ChannelKind"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "credential": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "method",
+        "id",
+        "kind",
+        "endpoint",
+        "account",
+        "credential"
+      ],
+      "additionalProperties": false
     },
     "SetLocaleRequest": {
       "title": "SetLocaleRequest",

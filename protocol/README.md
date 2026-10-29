@@ -13,6 +13,13 @@ session creation, prompt, cancel, explicit authentication, permission response,
 model selection and close. Electron's session IPC allowlist excludes direct
 file/workspace paths; those commands originate from native file dialogs.
 
+`settings.channel.get`, `settings.channel.set`, `settings.channel.connect`, and
+`settings.channel.disconnect` read and update channel parameters in the runtime
+settings file. `channel_settings` reports connection status and omits the
+credential envelope. A rejected credential returns `channel_settings_error`
+with a recovery code and does not replace a saved channel. The Desktop
+renderer allowlist does not forward these methods.
+
 `session_update` carries ACP message/thought chunks, tool calls/updates and
 configuration updates. `permission` carries the ACP request plus a Host-issued
 `permission_id`; only advertised choices are accepted. Model selection is shown
